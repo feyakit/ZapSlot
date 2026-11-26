@@ -140,13 +140,18 @@ void main() {
         lastUsedDate: DateTime(2026, 11, 26),
       );
 
+      // 默认模板直接带插座号（0 起始）：8 号口 -> gun_num=7，9 号口 -> gun_num=8
       expect(
         UrlRuleEngine.buildTargetUri(station1, 8, defaultSettings).toString(),
-        'alipays://platformapi/startapp?appId=20000067&url=http%3A%2F%2Fweixin.weiyunchong.com%2FpayQRcode.html%3Fdevice_no%3DW52001414',
+        'alipays://platformapi/startapp?appId=20000067&url=http%3A%2F%2Fweixin.weiyunchong.com%2FpayQRcode.html%3Fdevice_no%3DW52001414%26gun_num%3D7',
       );
       expect(
         UrlRuleEngine.buildTargetUri(station2, 9, defaultSettings).toString(),
-        'alipays://platformapi/startapp?appId=20000067&url=http%3A%2F%2Fweixin.weiyunchong.com%2FpayQRcode.html%3Fdevice_no%3DW52001715',
+        'alipays://platformapi/startapp?appId=20000067&url=http%3A%2F%2Fweixin.weiyunchong.com%2FpayQRcode.html%3Fdevice_no%3DW52001715%26gun_num%3D8',
+      );
+      expect(
+        UrlRuleEngine.templateUsesPort(station1, defaultSettings),
+        isTrue,
       );
     });
 
@@ -253,6 +258,42 @@ void main() {
         UrlRuleEngine.templateUsesPort(signedStation, defaultSettings),
         isFalse,
       );
+    });
+
+    test('portIndexBase switches gun_num between 0-based and 1-based', () {
+      final station = ChargingStation(
+        id: 'base',
+        alias: '插座号基准',
+        serialNumber: 'W52001715',
+        rawUrl:
+            'http://weixin.weiyunchong.com/payQRcode.html?device_no=W52001715',
+        lastUsedPort: 5,
+        lastUsedDate: DateTime(2026, 11, 26),
+      );
+
+      const zeroBased = AppSettings(portIndexBase: 0);
+      const oneBased = AppSettings(portIndexBase: 1);
+
+      final zeroUrl = UrlRuleEngine.buildTargetUri(station, 5, zeroBased)!
+          .queryParameters['url']!;
+      final oneUrl = UrlRuleEngine.buildTargetUri(station, 5, oneBased)!
+          .queryParameters['url']!;
+      expect(zeroUrl, contains('gun_num=4'));
+      expect(oneUrl, contains('gun_num=5'));
+    });
+
+    test('AppSettings ports index base and auto-add survive JSON round trip', () {
+      const settings = AppSettings(
+        autoAddScannedStation: false,
+        portIndexBase: 1,
+      );
+      final restored = AppSettings.fromJson(settings.toJson());
+      expect(restored.autoAddScannedStation, isFalse);
+      expect(restored.portIndexBase, 1);
+      // 缺字段时回退到默认值（老版本配置升级）
+      final legacy = AppSettings.fromJson({'ruleMode': 'globalTemplate'});
+      expect(legacy.autoAddScannedStation, isTrue);
+      expect(legacy.portIndexBase, 0);
     });
   });
 }

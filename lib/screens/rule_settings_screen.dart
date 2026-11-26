@@ -22,6 +22,8 @@ class _RuleSettingsScreenState extends ConsumerState<RuleSettingsScreen> {
   late UrlRuleMode _ruleMode;
   late int _defaultPortCount;
   late bool _autoLaunchInForeground;
+  late bool _autoAddScannedStation;
+  late bool _portIndexBaseZero;
 
   @override
   void initState() {
@@ -34,6 +36,8 @@ class _RuleSettingsScreenState extends ConsumerState<RuleSettingsScreen> {
     _ruleMode = settings.ruleMode;
     _defaultPortCount = settings.defaultPortCount;
     _autoLaunchInForeground = settings.autoLaunchInForeground;
+    _autoAddScannedStation = settings.autoAddScannedStation;
+    _portIndexBaseZero = settings.portIndexBase == 0;
   }
 
   @override
@@ -108,6 +112,8 @@ class _RuleSettingsScreenState extends ConsumerState<RuleSettingsScreen> {
           : _prefixController.text.trim().toUpperCase(),
       defaultPortCount: _defaultPortCount,
       autoLaunchInForeground: _autoLaunchInForeground,
+      autoAddScannedStation: _autoAddScannedStation,
+      portIndexBase: _portIndexBaseZero ? 0 : 1,
     );
     await ref.read(settingsProvider.notifier).updateSettings(next);
     if (!mounted) return;
@@ -126,6 +132,7 @@ class _RuleSettingsScreenState extends ConsumerState<RuleSettingsScreen> {
       _templateController.text,
       sampleSn: '${samplePrefix}1715',
       samplePort: 3,
+      portIndexBase: _portIndexBaseZero ? 0 : 1,
     );
     final templateError = _templateController.text.trim().isEmpty
         ? null
@@ -427,6 +434,32 @@ class _RuleSettingsScreenState extends ConsumerState<RuleSettingsScreen> {
                   ),
                   onChanged: (value) {
                     setState(() => _autoLaunchInForeground = value);
+                  },
+                ),
+                SwitchListTile(
+                  value: _autoAddScannedStation,
+                  contentPadding: EdgeInsets.zero,
+                  activeThumbColor: AppColors.emerald,
+                  title: const Text('扫到新码自动添加充电桩'),
+                  subtitle: const Text(
+                    '扫码或 OCR 识别到未收录的桩号时自动建桩并置顶；已收录的桩只更新二维码，保留别名与自定义链接',
+                    style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                  ),
+                  onChanged: (value) {
+                    setState(() => _autoAddScannedStation = value);
+                  },
+                ),
+                SwitchListTile(
+                  value: _portIndexBaseZero,
+                  contentPadding: EdgeInsets.zero,
+                  activeThumbColor: AppColors.emerald,
+                  title: const Text('插座号按 0 起始传参'),
+                  subtitle: const Text(
+                    '1 号插座传 gun_num=0（微云充默认如此）；若目标页高亮的插座号与所选不一致，关掉此项改为 1 起始',
+                    style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                  ),
+                  onChanged: (value) {
+                    setState(() => _portIndexBaseZero = value);
                   },
                 ),
               ],

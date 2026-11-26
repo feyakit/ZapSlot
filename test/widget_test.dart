@@ -90,7 +90,7 @@ void main() {
     expect(find.text('地库离线模式'), findsOneWidget);
     expect(find.text('W52001715'), findsOneWidget);
     expect(find.text('W52001414'), findsOneWidget);
-    expect(find.text('备忘插座号（仅本地记录，目标页内选口）'), findsNWidgets(2));
+    expect(find.text('选择插座编号（直达传参）'), findsNWidgets(2));
 
     // 点击第一张卡片的“离线排队 · 1号口”
     await tester.tap(find.text('离线排队 · 1号口'));
@@ -103,6 +103,16 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('离线排队中 · 出电梯有网自动唤起'), findsNothing);
+  });
+
+  testWidgets('online home labels the port buttons as direct payment',
+      (tester) async {
+    await tester.pumpWidget(buildTestApp(isOnline: true));
+    await tester.pumpAndSettle();
+
+    expect(find.text('选号直达支付 · 1号口'), findsOneWidget);
+    expect(find.text('选号直达支付 · 2号口'), findsOneWidget);
+    expect(find.text('外网已畅通 · 点击即可跳过广告直达'), findsOneWidget);
   });
 
   testWidgets('QuickSerialModal auto-matches station and syncs lastUsedPort',
@@ -134,16 +144,16 @@ void main() {
 
     expect(find.byType(RuleSettingsScreen), findsOneWidget);
     await tester.scrollUntilVisible(
-      find.text('通用原始码 · 支付宝直达（默认，最稳妥）'),
+      find.text('微云充 · 在线选号直达支付（默认）'),
       250,
       scrollable: find.byType(Scrollable).first,
     );
-    expect(find.text('通用原始码 · 支付宝直达（默认，最稳妥）'), findsOneWidget);
+    expect(find.text('微云充 · 在线选号直达支付（默认）'), findsOneWidget);
     await tester.scrollUntilVisible(
-      find.text('微云充 · 原码保留参数 + 传插座号直达支付页'),
+      find.text('通用原始码 · 支付宝直达（进选口页）'),
       250,
       scrollable: find.byType(Scrollable).first,
     );
-    expect(find.text('微云充 · 原码保留参数 + 传插座号直达支付页'), findsOneWidget);
+    expect(find.text('通用原始码 · 支付宝直达（进选口页）'), findsOneWidget);
   });
 }

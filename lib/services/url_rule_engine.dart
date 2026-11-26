@@ -107,6 +107,7 @@ class UrlRuleEngine {
         station.serialNumber,
         safePort,
         rawUrl: rawUrl,
+        portIndexBase: settings.portIndexBase,
       );
       final customUri = _parseValidUri(resolvedCustom);
       if (customUri != null) {
@@ -122,6 +123,7 @@ class UrlRuleEngine {
         station.serialNumber,
         safePort,
         rawUrl: rawUrl,
+        portIndexBase: settings.portIndexBase,
       );
       if (resolvedGlobal != null) {
         final globalUri = _parseValidUri(resolvedGlobal);
@@ -137,6 +139,7 @@ class UrlRuleEngine {
         station.serialNumber,
         safePort,
         rawUrl: rawUrl,
+        portIndexBase: settings.portIndexBase,
       );
       final rawUri = _parseValidUri(resolvedRaw);
       if (rawUri != null) {
@@ -150,6 +153,7 @@ class UrlRuleEngine {
         station.serialNumber,
         safePort,
         rawUrl: rawUrl,
+        portIndexBase: settings.portIndexBase,
       );
       return _parseValidUri(fallbackResolved);
     }
@@ -181,6 +185,7 @@ class UrlRuleEngine {
     String sampleSn = 'W52001715',
     int samplePort = 1,
     String? sampleRawUrl,
+    int portIndexBase = 0,
   }) {
     if (template.trim().isEmpty) return '';
     final effectiveRaw = sampleRawUrl ??
@@ -190,6 +195,7 @@ class UrlRuleEngine {
           sampleSn,
           samplePort,
           rawUrl: effectiveRaw,
+          portIndexBase: portIndexBase,
         ) ??
         '';
   }
@@ -199,6 +205,7 @@ class UrlRuleEngine {
     String sn,
     int port, {
     String rawUrl = '',
+    int portIndexBase = 0,
   }) {
     final lower = template.toLowerCase();
     final usesRawUrl = lower.contains('{raw_url}') ||
@@ -211,7 +218,7 @@ class UrlRuleEngine {
 
     final encodedSn = Uri.encodeComponent(sn.trim().toUpperCase());
     final encodedRaw = Uri.encodeComponent(trimmedRaw);
-    final zeroBasedPort = (port - 1).clamp(0, 11).toString();
+    final zeroBasedPort = (port - 1 + portIndexBase).clamp(0, 99).toString();
 
     String encodedRawWithPort0 = '';
     if (lower.contains('{raw_url_port0_encoded}') && trimmedRaw.isNotEmpty) {

@@ -136,7 +136,7 @@ void main() {
       expect(launchedUris.length, 1);
       expect(
         launchedUris.first.toString(),
-        'alipays://platformapi/startapp?appId=20000067&url=http%3A%2F%2Fweixin.weiyunchong.com%2FpayQRcode.html%3Fdevice_no%3DW52001414',
+        'alipays://platformapi/startapp?appId=20000067&url=http%3A%2F%2Fweixin.weiyunchong.com%2FpayQRcode.html%3Fdevice_no%3DW52001414%26gun_num%3D7',
       );
       expect(bgCancelCount, 1);
       expect(notifier.state.hasPendingTask, isFalse);
@@ -189,7 +189,7 @@ void main() {
       expect(launchedUris.length, 1);
       expect(
         launchedUris.first.toString(),
-        'alipays://platformapi/startapp?appId=20000067&url=http%3A%2F%2Fweixin.weiyunchong.com%2FpayQRcode.html%3Fdevice_no%3DW52001715',
+        'alipays://platformapi/startapp?appId=20000067&url=http%3A%2F%2Fweixin.weiyunchong.com%2FpayQRcode.html%3Fdevice_no%3DW52001715%26gun_num%3D8',
       );
       expect(notifier.state.hasPendingTask, isFalse);
 
@@ -221,6 +221,61 @@ void main() {
       expect(notifier.state.hasPendingTask, isFalse);
 
       notifier.dispose();
+    });
+
+    test('online tap launches Alipay deep link directly without queueing',
+        () async {
+      final notifier = createNotifier();
+      await notifier.initialize();
+      isOnlineFlag = true;
+
+      final station = stations.firstWhere((s) => s.serialNumber == 'W52001715');
+      final outcome = await notifier.triggerOrQueue(station, 3);
+
+      expect(outcome, QueueActionOutcome.launchedImmediately);
+      expect(launchedUris.length, 1);
+      expect(launchedUris.single.toString(), contains('gun_num%3D2'));
+      expect(bgScheduleCount, 0);
+      expect(notifier.state.hasPendingTask, isFalse);
+      expect(storage.loadPendingQueue(), isNull);
+      expect(notifier.state.statusMessage, contains('已直达'));
+
+      notifier.dispose();
+    });
+
+    test('collectScannedStation auto-adds new QR and keeps config on rescan',
+        () async {
+      final notifier = StationsNotifier(storage, stations);
+      final original = stations.first;
+      await notifier.upsertStation(
+        id: original.id,
+        alias: 'B2-A区 1号桩',
+        serialNumber: original.serialNumber,
+        rawUrl: original.rawUrl,
+        customDeepLinkTemplate: 'weixin://dl/business/?t=abc',
+        lastUsedPort: 6,
+      );
+
+      final rescanned = await notifier.collectScannedStation(
+        serialNumber: 'w52001715',
+        rawUrl:
+            'http://weixin.weiyunchong.com/payQRcode.html?device_no=W52001715&sign=x',
+      );
+      expect(rescanned.alias, 'B2-A区 1号桩');
+      expect(rescanned.lastUsedPort, 6);
+      expect(rescanned.customDeepLinkTemplate, 'weixin://dl/business/?t=abc');
+      expect(rescanned.rawUrl, contains('sign=x'));
+      expect(notifier.state.length, stations.length);
+
+      final added = await notifier.collectScannedStation(
+        serialNumber: 'W52009999',
+        rawUrl:
+            'http://weixin.weiyunchong.com/payQRcode.html?device_no=W52009999',
+      );
+      expect(added.alias, '车库桩 9999');
+      expect(added.serialNumber, 'W52009999');
+      expect(notifier.state.first.id, added.id);
+      expect(notifier.state.length, stations.length + 1);
     });
 
     test('StationsNotifier preserves customDeepLinkTemplate on re-scan',

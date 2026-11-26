@@ -31,12 +31,16 @@ class AppSettings {
     this.quickInputPrefix = defaultQuickInputPrefix,
     int defaultPortCount = 10,
     this.autoLaunchInForeground = true,
-  }) : defaultPortCount = defaultPortCount < 1
+    this.autoAddScannedStation = true,
+    int portIndexBase = 0,
+  })  : defaultPortCount = defaultPortCount < 1
             ? 1
-            : (defaultPortCount > 12 ? 12 : defaultPortCount);
+            : (defaultPortCount > 12 ? 12 : defaultPortCount),
+        portIndexBase = portIndexBase == 1 ? 1 : 0;
 
+  /// 默认在线直达：保留原二维码全部参数，并附上选中的插座号（gun_num）直达支付页。
   static const String defaultGlobalTemplate =
-      'alipays://platformapi/startapp?appId=20000067&url={RAW_URL_ENCODED}';
+      'alipays://platformapi/startapp?appId=20000067&url={RAW_URL_PORT0_ENCODED}';
   static const String defaultFallbackRawUrlTemplate =
       'http://weixin.weiyunchong.com/payQRcode.html?device_no={SN}';
   static const String defaultSerialRegex = r'W\d{8}';
@@ -44,17 +48,17 @@ class AppSettings {
 
   static const List<UrlRulePreset> presets = [
     UrlRulePreset(
-      name: '通用原始码 · 支付宝直达（默认，最稳妥）',
-      description: '完整保留原二维码所有参数（含签名/门店参数）并交由支付宝内置浏览器打开，进入选口页查看实时空闲插座',
+      name: '微云充 · 在线选号直达支付（默认）',
+      description: '保留原二维码全部参数（含签名/门店参数）并附加 gun_num，选几号口就直达几号口的支付页',
       template:
-          'alipays://platformapi/startapp?appId=20000067&url={RAW_URL_ENCODED}',
+          'alipays://platformapi/startapp?appId=20000067&url={RAW_URL_PORT0_ENCODED}',
       recommendedMode: UrlRuleMode.globalTemplate,
     ),
     UrlRulePreset(
-      name: '微云充 · 原码保留参数 + 传插座号直达支付页',
-      description: '在保留原二维码全部参数的基础上附加 gun_num={PORT_0}（0起始索引），跳过选口页直达支付页',
+      name: '通用原始码 · 支付宝直达（进选口页）',
+      description: '完整保留原二维码所有参数并交由支付宝内置浏览器打开，进入选口页自行选择空闲插座',
       template:
-          'alipays://platformapi/startapp?appId=20000067&url={RAW_URL_PORT0_ENCODED}',
+          'alipays://platformapi/startapp?appId=20000067&url={RAW_URL_ENCODED}',
       recommendedMode: UrlRuleMode.globalTemplate,
     ),
     UrlRulePreset(
@@ -93,6 +97,12 @@ class AppSettings {
   final int defaultPortCount;
   final bool autoLaunchInForeground;
 
+  /// 扫到未收录的新二维码时是否自动建桩（不再弹确认浮层）。
+  final bool autoAddScannedStation;
+
+  /// 插座号传参基准：0 = gun_num 从 0 开始（1号口传 0），1 = 与服务端 1 起始一致。
+  final int portIndexBase;
+
   AppSettings copyWith({
     UrlRuleMode? ruleMode,
     String? globalUrlTemplate,
@@ -100,6 +110,8 @@ class AppSettings {
     String? quickInputPrefix,
     int? defaultPortCount,
     bool? autoLaunchInForeground,
+    bool? autoAddScannedStation,
+    int? portIndexBase,
   }) {
     final nextPorts = defaultPortCount ?? this.defaultPortCount;
     return AppSettings(
@@ -110,6 +122,9 @@ class AppSettings {
       defaultPortCount: nextPorts.clamp(1, 12),
       autoLaunchInForeground:
           autoLaunchInForeground ?? this.autoLaunchInForeground,
+      autoAddScannedStation:
+          autoAddScannedStation ?? this.autoAddScannedStation,
+      portIndexBase: portIndexBase ?? this.portIndexBase,
     );
   }
 
@@ -121,6 +136,8 @@ class AppSettings {
       'quickInputPrefix': quickInputPrefix,
       'defaultPortCount': defaultPortCount,
       'autoLaunchInForeground': autoLaunchInForeground,
+      'autoAddScannedStation': autoAddScannedStation,
+      'portIndexBase': portIndexBase,
     };
   }
 
@@ -146,6 +163,8 @@ class AppSettings {
               : defaultQuickInputPrefix,
       defaultPortCount: rawPorts.clamp(1, 12),
       autoLaunchInForeground: json['autoLaunchInForeground'] as bool? ?? true,
+      autoAddScannedStation: json['autoAddScannedStation'] as bool? ?? true,
+      portIndexBase: (json['portIndexBase'] as num?)?.toInt() ?? 0,
     );
   }
 }

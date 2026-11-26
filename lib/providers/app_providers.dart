@@ -103,6 +103,42 @@ class StationsNotifier extends StateNotifier<List<ChargingStation>> {
     await _storage.saveStations(state);
   }
 
+  /// 扫码 / OCR 静默入库：
+  /// 已收录的桩只更新原始二维码链接（保留别名、上次插座号与自定义直达模板），
+  /// 未收录的桩按桩号尾号自动命名新建并置顶。返回最终保存的实体。
+  Future<ChargingStation> collectScannedStation({
+    required String serialNumber,
+    required String rawUrl,
+    String? alias,
+  }) async {
+    final normalizedSn = serialNumber.trim().toUpperCase();
+    final index = state.indexWhere((s) => s.serialNumber == normalizedSn);
+
+    if (index >= 0) {
+      final current = state[index];
+      final updated = current.copyWith(rawUrl: rawUrl.trim());
+      if (updated == current) return current;
+      final next = [...state]
+        ..removeAt(index)
+        ..insert(0, updated);
+      state = next;
+      await _storage.saveStations(state);
+      return updated;
+    }
+
+    final tail = normalizedSn.length > 4
+        ? normalizedSn.substring(normalizedSn.length - 4)
+        : normalizedSn;
+    return upsertStation(
+      alias: (alias != null && alias.trim().isNotEmpty)
+          ? alias.trim()
+          : '车库桩 $tail',
+      serialNumber: normalizedSn,
+      rawUrl: rawUrl,
+      preserveCustomTemplateIfNull: true,
+    );
+  }
+
   Future<void> deleteStation(String stationId) async {
     state = state.where((s) => s.id != stationId).toList();
     await _storage.saveStations(state);
