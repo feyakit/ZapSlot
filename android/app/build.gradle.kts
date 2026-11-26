@@ -53,6 +53,10 @@ android {
                 // 未配置 android/key.properties 时回退到 debug 签名以便本地/CI 构建验证
                 signingConfigs.getByName("debug")
             }
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
         }
     }
 }

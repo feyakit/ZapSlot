@@ -14,7 +14,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup Java 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '21'
@@ -33,6 +33,44 @@ jobs:
 
       - name: Run unit & widget tests
         run: flutter test -r expanded
+
+      - name: Configure Gradle Maven mirror (avoid Maven Central 429)
+        run: |
+          mkdir -p ~/.gradle/init.d
+          cat << 'EOF' > ~/.gradle/init.d/maven-mirror.gradle
+          beforeSettings { settings ->
+              settings.pluginManagement.repositories {
+                  maven { url = uri('https://maven-central.storage-download.googleapis.com/maven2') }
+                  google()
+                  gradlePluginPortal()
+              }
+              settings.dependencyResolutionManagement.repositories {
+                  maven { url = uri('https://maven-central.storage-download.googleapis.com/maven2') }
+                  google()
+                  gradlePluginPortal()
+              }
+          }
+          gradle.projectsLoaded { g ->
+              g.rootProject.allprojects { p ->
+                  p.buildscript.repositories.all { repo ->
+                      if (repo instanceof MavenArtifactRepository) {
+                          def u = repo.url.toString()
+                          if (u.startsWith('https://repo.maven.apache.org/maven2') || u.startsWith('https://repo1.maven.org/maven2')) {
+                              repo.url = p.uri('https://maven-central.storage-download.googleapis.com/maven2')
+                          }
+                      }
+                  }
+                  p.repositories.all { repo ->
+                      if (repo instanceof MavenArtifactRepository) {
+                          def u = repo.url.toString()
+                          if (u.startsWith('https://repo.maven.apache.org/maven2') || u.startsWith('https://repo1.maven.org/maven2')) {
+                              repo.url = p.uri('https://maven-central.storage-download.googleapis.com/maven2')
+                          }
+                      }
+                  }
+              }
+          }
+          EOF
 
       - name: Build Android Release APK
         run: flutter build apk --release
