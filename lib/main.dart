@@ -81,7 +81,7 @@ class _ChargeQuickAppState extends ConsumerState<ChargeQuickApp>
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: '快充直达 ChargeQuick',
+      title: '闪雀 ZapSlot',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.darkTheme,
       home: const HomeScreen(),

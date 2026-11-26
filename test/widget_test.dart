@@ -86,7 +86,7 @@ void main() {
     await tester.pumpWidget(buildTestApp(isOnline: false));
     await tester.pumpAndSettle();
 
-    expect(find.text('快充直达'), findsOneWidget);
+    expect(find.text('闪雀'), findsOneWidget);
     expect(find.text('地库离线模式'), findsOneWidget);
     expect(find.text('W52001715'), findsOneWidget);
     expect(find.text('W52001414'), findsOneWidget);

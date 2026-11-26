@@ -131,7 +131,7 @@ class HomeScreen extends ConsumerWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  '快充直达',
+                  '闪雀',
                   style: TextStyle(
                     fontSize: 26,
                     fontWeight: FontWeight.w900,

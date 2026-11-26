@@ -36,7 +36,7 @@
     </queries>
 
     <application
-        android:label="快充直达"
+        android:label="闪雀"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

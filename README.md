@@ -1,4 +1,4 @@
-# 快充直达 (ChargeQuick)
+# 闪雀 (ZapSlot)
 
 一款零后端、极速冷启动、专为**地下车库无信号扫码充电**与**跳过小程序开屏广告**打造的 Flutter 跨平台工具应用（iOS / Android）。
 
@@ -24,7 +24,7 @@
 
 ```bash
 # 1. 进入项目目录
-cd charge-quick
+cd ZapSlot
 
 # 2. 安装依赖并运行单元测试与组件测试
 flutter pub get
