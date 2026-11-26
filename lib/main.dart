@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'providers/app_providers.dart';
 import 'screens/home_screen.dart';
+import 'services/background_queue_worker.dart';
 import 'services/notification_service.dart';
 import 'services/storage_service.dart';
 import 'theme/app_theme.dart';
@@ -14,6 +15,8 @@ Future<void> main() async {
   final prefs = await SharedPreferences.getInstance();
   final storage = StorageService(prefs);
   final initialStations = await storage.loadStationsOrSeed();
+
+  await BackgroundQueueWorker.initialize();
 
   final notifications = NotificationService();
   final launchPayload = await notifications.initialize();

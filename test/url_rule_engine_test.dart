@@ -220,5 +220,39 @@ void main() {
         'alipays://platformapi/startapp?appId=20000067&url=http%3A%2F%2Fweixin.weiyunchong.com%2FpayQRcode.html%3Fdevice_no%3DW52001715%26gun_num%3D9',
       );
     });
+
+    test('{RAW_URL_PORT0_ENCODED} preserves extra signature/store params and appends gun_num',
+        () {
+      const settings = AppSettings(
+        ruleMode: UrlRuleMode.globalTemplate,
+        globalUrlTemplate:
+            'alipays://platformapi/startapp?appId=20000067&url={RAW_URL_PORT0_ENCODED}',
+      );
+      final signedStation = ChargingStation(
+        id: 'signed1',
+        alias: '带签名参数桩',
+        serialNumber: 'W52001715',
+        rawUrl:
+            'http://weixin.weiyunchong.com/payQRcode.html?device_no=W52001715&store=sz01&sign=abc123',
+        lastUsedPort: 8,
+        lastUsedDate: DateTime(2026, 11, 26),
+      );
+
+      final uri = UrlRuleEngine.buildTargetUri(signedStation, 8, settings);
+      expect(uri, isNotNull);
+      final innerUrl = Uri.decodeComponent(uri!.queryParameters['url']!);
+      final parsedInner = Uri.parse(innerUrl);
+      expect(parsedInner.queryParameters['device_no'], 'W52001715');
+      expect(parsedInner.queryParameters['store'], 'sz01');
+      expect(parsedInner.queryParameters['sign'], 'abc123');
+      expect(parsedInner.queryParameters['gun_num'], '7');
+      expect(UrlRuleEngine.templateUsesPort(signedStation, settings), isTrue);
+
+      const defaultSettings = AppSettings();
+      expect(
+        UrlRuleEngine.templateUsesPort(signedStation, defaultSettings),
+        isFalse,
+      );
+    });
   });
 }

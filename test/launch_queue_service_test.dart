@@ -47,6 +47,8 @@ void main() {
   late StreamController<InternetStatus> internetController;
   late List<Uri> launchedUris;
   late bool isOnlineFlag;
+  late int bgScheduleCount;
+  late int bgCancelCount;
 
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
@@ -59,6 +61,8 @@ void main() {
     internetController = StreamController<InternetStatus>.broadcast();
     launchedUris = [];
     isOnlineFlag = false;
+    bgScheduleCount = 0;
+    bgCancelCount = 0;
   });
 
   tearDown(() async {
@@ -80,6 +84,12 @@ void main() {
       },
       connectivityStream: connectivityController.stream,
       internetStatusStream: internetController.stream,
+      onScheduleBackground: () async {
+        bgScheduleCount++;
+      },
+      onCancelBackground: () async {
+        bgCancelCount++;
+      },
       autoInit: false,
     );
   }
@@ -100,7 +110,7 @@ void main() {
       );
     });
 
-    test('queues offline in garage and auto-launches in foreground when network recovers',
+    test('queues offline in garage, schedules WorkManager, and auto-launches when network recovers',
         () async {
       final notifier = createNotifier();
       await notifier.initialize();
@@ -111,6 +121,7 @@ void main() {
       final outcome = await notifier.triggerOrQueue(station1414, 8);
       expect(outcome, QueueActionOutcome.queuedOffline);
       expect(notifier.state.hasPendingTask, isTrue);
+      expect(bgScheduleCount, 1);
       expect(storage.loadPendingQueue()?.stationId, station1414.id);
       expect(storage.loadPendingQueue()?.port, 8);
       expect(launchedUris, isEmpty);
@@ -127,8 +138,28 @@ void main() {
         launchedUris.first.toString(),
         'alipays://platformapi/startapp?appId=20000067&url=http%3A%2F%2Fweixin.weiyunchong.com%2FpayQRcode.html%3Fdevice_no%3DW52001414',
       );
+      expect(bgCancelCount, 1);
       expect(notifier.state.hasPendingTask, isFalse);
       expect(storage.loadPendingQueue(), isNull);
+
+      notifier.dispose();
+    });
+
+    test('cold start with leftover pending task while online does NOT auto-launch misfire',
+        () async {
+      final station1715 =
+          stations.firstWhere((s) => s.serialNumber == 'W52001715');
+      await storage.savePendingQueue(stationId: station1715.id, port: 4);
+
+      isOnlineFlag = true;
+      final notifier = createNotifier();
+      await notifier.initialize();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      expect(notifier.state.isOnline, isTrue);
+      expect(notifier.state.hasPendingTask, isTrue);
+      expect(launchedUris, isEmpty);
+      expect(notifications.shown, isEmpty);
 
       notifier.dispose();
     });

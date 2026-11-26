@@ -56,6 +56,10 @@ class HomeScreen extends ConsumerWidget {
                           isQueuedHere: isQueuedHere,
                           queuedPort:
                               isQueuedHere ? queueState.pendingPort : null,
+                          usesPort: UrlRuleEngine.templateUsesPort(
+                            station,
+                            settings,
+                          ),
                           onTrigger: (port) async {
                             await ref
                                 .read(launchQueueProvider.notifier)

@@ -228,6 +228,13 @@ class _RuleSettingsScreenState extends ConsumerState<RuleSettingsScreen> {
                       side: const BorderSide(color: AppColors.cyan),
                       onPressed: () => _insertPlaceholder('{RAW_URL_ENCODED}'),
                     ),
+                    ActionChip(
+                      label: const Text('插入 {RAW_URL_PORT0_ENCODED}'),
+                      backgroundColor: AppColors.surfaceElevated,
+                      side: const BorderSide(color: AppColors.cyan),
+                      onPressed: () =>
+                          _insertPlaceholder('{RAW_URL_PORT0_ENCODED}'),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 12),

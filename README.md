@@ -39,8 +39,10 @@ flutter build apk --release
 
 ### Android 配置说明
 - `android/app/src/main/AndroidManifest.xml` 已配置 `CAMERA`、`INTERNET`、`ACCESS_NETWORK_STATE`、`POST_NOTIFICATIONS`、`VIBRATE` 权限以及 `<queries>` 中的 `weixin` / `alipays` / `https` / `http` Scheme。
-- `android/app/build.gradle.kts` 已配置 `minSdk >= 21`、`multiDexEnabled = true` 与 `coreLibraryDesugaring`（`flutter_local_notifications`、`mobile_scanner` 及 `google_mlkit_text_recognition` 依赖要求）。
+- `android/app/build.gradle.kts` 已启用 `org.jetbrains.kotlin.android`、`minSdk >= 21`、`multiDexEnabled = true`、`coreLibraryDesugaring`，并支持通过 `android/key.properties`（参见 `android/key.properties.example`）进行正式 Release 签名（未配置时自动回退至 debug 签名便于本地/CI 验证）。
+- 离线排队时自动通过 `workmanager` 注册**联网约束一次性任务（OneOffTask）+ 15 分钟周期兜底任务（PeriodicTask）**，即使 App 被 MIUI/ColorOS 杀后台，出电梯联网后仍可唤醒并推送高优先级直达通知（极端省电策略下最晚由 15 分钟周期任务兜底）。
 
 ### iOS 配置说明
-- `ios/Runner/Info.plist` 已配置 `NSCameraUsageDescription` 与 `LSApplicationQueriesSchemes`（`weixin`、`alipays`）。
+- `ios/Runner/AppDelegate.swift` 已配置 `UNUserNotificationCenter.current().delegate = self` 以支持前台通知展示。
+- `ios/Runner/Info.plist` 已配置 `NSCameraUsageDescription`、`LSApplicationQueriesSchemes`（`weixin`、`alipays`）、`UIBackgroundModes`（`fetch`、`processing`）与 `BGTaskSchedulerPermittedIdentifiers`（`com.feyakit.chargeQuick.networkRecovery`）。
 - `ios/Runner.xcodeproj/project.pbxproj` 已将 iOS Deployment Target 设为 `15.5`（Google ML Kit 依赖要求），在 macOS 上执行 `cd ios && pod install` 即可构建。

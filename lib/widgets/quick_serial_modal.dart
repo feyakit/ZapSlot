@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../models/app_settings.dart';
 import '../providers/app_providers.dart';
 import '../services/url_rule_engine.dart';
 import '../theme/app_theme.dart';
@@ -101,7 +102,7 @@ class _QuickSerialModalState extends ConsumerState<QuickSerialModal> {
               alias: '车库桩 ${finalSn.substring(finalSn.length - 4)}',
               serialNumber: finalSn,
               rawUrl: UrlRuleEngine.previewUrl(
-                settings.globalUrlTemplate,
+                AppSettings.defaultFallbackRawUrlTemplate,
                 sampleSn: finalSn,
                 samplePort: _selectedPort,
               ),

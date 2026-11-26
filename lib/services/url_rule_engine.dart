@@ -157,6 +157,24 @@ class UrlRuleEngine {
     return null;
   }
 
+  /// 判断当前生效的链接规则是否会把用户选中的插座号传入目标链接。
+  static bool templateUsesPort(ChargingStation station, AppSettings settings) {
+    final custom = station.customDeepLinkTemplate?.trim();
+    final String effectiveTemplate;
+    if (custom != null && custom.isNotEmpty) {
+      effectiveTemplate = custom;
+    } else if (settings.ruleMode == UrlRuleMode.globalTemplate &&
+        settings.globalUrlTemplate.trim().isNotEmpty) {
+      effectiveTemplate = settings.globalUrlTemplate.trim();
+    } else {
+      effectiveTemplate = station.rawUrl.trim();
+    }
+    final lower = effectiveTemplate.toLowerCase();
+    return lower.contains('{port}') ||
+        lower.contains('{port_0}') ||
+        lower.contains('{raw_url_port0_encoded}');
+  }
+
   /// 生成规则设置页中的实时预览字符串。
   static String previewUrl(
     String template, {
@@ -182,10 +200,10 @@ class UrlRuleEngine {
     int port, {
     String rawUrl = '',
   }) {
-    final usesRawUrl = template.contains('{RAW_URL}') ||
-        template.contains('{raw_url}') ||
-        template.contains('{RAW_URL_ENCODED}') ||
-        template.contains('{raw_url_encoded}');
+    final lower = template.toLowerCase();
+    final usesRawUrl = lower.contains('{raw_url}') ||
+        lower.contains('{raw_url_encoded}') ||
+        lower.contains('{raw_url_port0_encoded}');
     final trimmedRaw = rawUrl.trim();
     if (usesRawUrl && trimmedRaw.isEmpty) {
       return null;
@@ -194,6 +212,21 @@ class UrlRuleEngine {
     final encodedSn = Uri.encodeComponent(sn.trim().toUpperCase());
     final encodedRaw = Uri.encodeComponent(trimmedRaw);
     final zeroBasedPort = (port - 1).clamp(0, 11).toString();
+
+    String encodedRawWithPort0 = '';
+    if (lower.contains('{raw_url_port0_encoded}') && trimmedRaw.isNotEmpty) {
+      final parsedRaw = Uri.tryParse(trimmedRaw);
+      if (parsedRaw != null && parsedRaw.hasScheme) {
+        final mergedParams = Map<String, String>.from(parsedRaw.queryParameters)
+          ..['gun_num'] = zeroBasedPort;
+        encodedRawWithPort0 = Uri.encodeComponent(
+          parsedRaw.replace(queryParameters: mergedParams).toString(),
+        );
+      } else {
+        encodedRawWithPort0 = encodedRaw;
+      }
+    }
+
     return template
         .replaceAll('{SN}', encodedSn)
         .replaceAll('{sn}', encodedSn)
@@ -201,6 +234,8 @@ class UrlRuleEngine {
         .replaceAll('{port_0}', zeroBasedPort)
         .replaceAll('{PORT}', port.toString())
         .replaceAll('{port}', port.toString())
+        .replaceAll('{RAW_URL_PORT0_ENCODED}', encodedRawWithPort0)
+        .replaceAll('{raw_url_port0_encoded}', encodedRawWithPort0)
         .replaceAll('{RAW_URL_ENCODED}', encodedRaw)
         .replaceAll('{raw_url_encoded}', encodedRaw)
         .replaceAll('{RAW_URL}', trimmedRaw)

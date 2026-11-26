@@ -13,6 +13,7 @@ class StationCard extends StatefulWidget {
     required this.isOnline,
     required this.isQueuedHere,
     this.queuedPort,
+    this.usesPort = false,
     required this.onTrigger,
     required this.onCopyLink,
     required this.onEdit,
@@ -24,6 +25,7 @@ class StationCard extends StatefulWidget {
   final bool isOnline;
   final bool isQueuedHere;
   final int? queuedPort;
+  final bool usesPort;
   final ValueChanged<int> onTrigger;
   final ValueChanged<int> onCopyLink;
   final VoidCallback onEdit;
@@ -215,9 +217,11 @@ class _StationCardState extends State<StationCard> {
             ],
           ),
           const SizedBox(height: 14),
-          const Text(
-            '选择插座编号',
-            style: TextStyle(
+          Text(
+            widget.usesPort
+                ? '选择插座编号（直达传参）'
+                : '备忘插座号（仅本地记录，目标页内选口）',
+            style: const TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w600,
               color: AppColors.textSecondary,

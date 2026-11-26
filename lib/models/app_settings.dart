@@ -36,30 +36,32 @@ class AppSettings {
             : (defaultPortCount > 12 ? 12 : defaultPortCount);
 
   static const String defaultGlobalTemplate =
-      'alipays://platformapi/startapp?appId=20000067&url=http%3A%2F%2Fweixin.weiyunchong.com%2FpayQRcode.html%3Fdevice_no%3D{SN}';
+      'alipays://platformapi/startapp?appId=20000067&url={RAW_URL_ENCODED}';
+  static const String defaultFallbackRawUrlTemplate =
+      'http://weixin.weiyunchong.com/payQRcode.html?device_no={SN}';
   static const String defaultSerialRegex = r'W\d{8}';
   static const String defaultQuickInputPrefix = 'W5200';
 
   static const List<UrlRulePreset> presets = [
     UrlRulePreset(
-      name: '微云充 · 支付宝直达（推荐）',
-      description: '通过支付宝内置浏览器直达微云充选口页，支持扫码、OCR 及 4 位尾号直达，免扫码跳过开屏广告',
-      template:
-          'alipays://platformapi/startapp?appId=20000067&url=http%3A%2F%2Fweixin.weiyunchong.com%2FpayQRcode.html%3Fdevice_no%3D{SN}',
-      recommendedMode: UrlRuleMode.globalTemplate,
-    ),
-    UrlRulePreset(
-      name: '微云充 · 带插座号直达支付页（实验）',
-      description: '传入 gun_num={PORT_0}（0起始索引）跳过选口页直达支付页，首次使用请核对页面显示的插座号',
-      template:
-          'alipays://platformapi/startapp?appId=20000067&url=http%3A%2F%2Fweixin.weiyunchong.com%2FpayQRcode.html%3Fdevice_no%3D{SN}%26gun_num%3D{PORT_0}',
-      recommendedMode: UrlRuleMode.globalTemplate,
-    ),
-    UrlRulePreset(
-      name: '通用充电桩 · 支付宝打开原始码',
-      description: '自动将各品牌充电桩的原始二维码链接编码后交由支付宝内置浏览器直接打开',
+      name: '通用原始码 · 支付宝直达（默认，最稳妥）',
+      description: '完整保留原二维码所有参数（含签名/门店参数）并交由支付宝内置浏览器打开，进入选口页查看实时空闲插座',
       template:
           'alipays://platformapi/startapp?appId=20000067&url={RAW_URL_ENCODED}',
+      recommendedMode: UrlRuleMode.globalTemplate,
+    ),
+    UrlRulePreset(
+      name: '微云充 · 原码保留参数 + 传插座号直达支付页',
+      description: '在保留原二维码全部参数的基础上附加 gun_num={PORT_0}（0起始索引），跳过选口页直达支付页',
+      template:
+          'alipays://platformapi/startapp?appId=20000067&url={RAW_URL_PORT0_ENCODED}',
+      recommendedMode: UrlRuleMode.globalTemplate,
+    ),
+    UrlRulePreset(
+      name: '微云充 · 按桩号拼接支付宝直达',
+      description: '仅按 {SN} 拼接微云充地址（适合无签名参数的纯编号桩或 OCR / 尾号直达）',
+      template:
+          'alipays://platformapi/startapp?appId=20000067&url=http%3A%2F%2Fweixin.weiyunchong.com%2FpayQRcode.html%3Fdevice_no%3D{SN}',
       recommendedMode: UrlRuleMode.globalTemplate,
     ),
     UrlRulePreset(

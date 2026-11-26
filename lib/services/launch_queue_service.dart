@@ -8,6 +8,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../models/app_settings.dart';
 import '../models/charging_station.dart';
+import 'background_queue_worker.dart';
 import 'notification_service.dart';
 import 'storage_service.dart';
 import 'url_rule_engine.dart';
@@ -86,6 +87,8 @@ class LaunchQueueNotifier extends StateNotifier<LaunchQueueState> {
     Future<bool> Function(Uri uri)? launchUriCallback,
     Stream<List<ConnectivityResult>>? connectivityStream,
     Stream<InternetStatus>? internetStatusStream,
+    Future<void> Function()? onScheduleBackground,
+    Future<void> Function()? onCancelBackground,
     bool autoInit = true,
   })  : _storage = storage,
         _notifications = notifications,
@@ -96,6 +99,10 @@ class LaunchQueueNotifier extends StateNotifier<LaunchQueueState> {
         _launchUriOverride = launchUriCallback,
         _connectivityStreamOverride = connectivityStream,
         _internetStatusStreamOverride = internetStatusStream,
+        _scheduleBackground =
+            onScheduleBackground ?? BackgroundQueueWorker.schedulePendingRecovery,
+        _cancelBackground =
+            onCancelBackground ?? BackgroundQueueWorker.cancelPendingRecovery,
         _internetChecker = checkInternet == null && internetStatusStream == null
             ? InternetConnection.createInstance(
                 checkInterval: const Duration(seconds: 3),
@@ -131,6 +138,8 @@ class LaunchQueueNotifier extends StateNotifier<LaunchQueueState> {
   final Future<bool> Function(Uri uri)? _launchUriOverride;
   final Stream<List<ConnectivityResult>>? _connectivityStreamOverride;
   final Stream<InternetStatus>? _internetStatusStreamOverride;
+  final Future<void> Function() _scheduleBackground;
+  final Future<void> Function() _cancelBackground;
   final InternetConnection? _internetChecker;
 
   StreamSubscription<List<ConnectivityResult>>? _connectivitySub;
@@ -161,7 +170,9 @@ class LaunchQueueNotifier extends StateNotifier<LaunchQueueState> {
       });
     }
 
-    await refreshNetworkStatus();
+    // 冷启动只同步网络状态，不自动甩出旧排队任务以防误触；
+    // 若有残留排队任务，主页横幅会显示“立即唤醒”按钮由用户手动确认。
+    await refreshNetworkStatus(triggerRecovery: false);
   }
 
   void _restorePersistedQueue() {
@@ -257,6 +268,7 @@ class LaunchQueueNotifier extends StateNotifier<LaunchQueueState> {
         if (!mounted) return;
         if (launched) {
           await _storage.clearPendingQueue();
+          await _cancelBackground();
           state = state.copyWith(
             clearPendingStation: true,
             clearPendingPort: true,
@@ -281,7 +293,7 @@ class LaunchQueueNotifier extends StateNotifier<LaunchQueueState> {
     }
   }
 
-  /// 一键直达或离线排队：在线立即拉起外部 App，离线持久化排队。
+  /// 一键直达或离线排队：在线立即拉起外部 App，离线持久化排队并注册后台恢复任务。
   Future<QueueActionOutcome> triggerOrQueue(
     ChargingStation station,
     int port,
@@ -313,6 +325,7 @@ class LaunchQueueNotifier extends StateNotifier<LaunchQueueState> {
       }
       if (launched) {
         await _storage.clearPendingQueue();
+        await _cancelBackground();
         await _notifications.cancelRecoveryNotification();
         state = state.copyWith(
           clearPendingStation: true,
@@ -333,6 +346,7 @@ class LaunchQueueNotifier extends StateNotifier<LaunchQueueState> {
     }
 
     await _storage.savePendingQueue(stationId: station.id, port: safePort);
+    await _scheduleBackground();
     if (!mounted) return QueueActionOutcome.queuedOffline;
     state = state.copyWith(
       pendingStation: station.copyWith(lastUsedPort: safePort),
@@ -361,6 +375,7 @@ class LaunchQueueNotifier extends StateNotifier<LaunchQueueState> {
     if (!mounted) return launched;
     if (launched) {
       await _storage.clearPendingQueue();
+      await _cancelBackground();
       await _notifications.cancelRecoveryNotification();
       if (!mounted) return true;
       state = state.copyWith(
@@ -382,6 +397,7 @@ class LaunchQueueNotifier extends StateNotifier<LaunchQueueState> {
 
   Future<void> cancelQueue() async {
     await _storage.clearPendingQueue();
+    await _cancelBackground();
     await _notifications.cancelRecoveryNotification();
     if (!mounted) return;
     state = state.copyWith(
@@ -436,6 +452,7 @@ class LaunchQueueNotifier extends StateNotifier<LaunchQueueState> {
           final launched = await _launchUri(uri);
           if (launched) {
             await _storage.clearPendingQueue();
+            await _cancelBackground();
             if (!mounted) return;
             state = state.copyWith(
               clearPendingStation: true,

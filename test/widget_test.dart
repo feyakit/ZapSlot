@@ -69,6 +69,8 @@ void main() {
             launchUriCallback: (_) async => true,
             connectivityStream: connController.stream,
             internetStatusStream: netController.stream,
+            onScheduleBackground: () async {},
+            onCancelBackground: () async {},
           );
         }),
       ],
@@ -88,6 +90,7 @@ void main() {
     expect(find.text('地库离线模式'), findsOneWidget);
     expect(find.text('W52001715'), findsOneWidget);
     expect(find.text('W52001414'), findsOneWidget);
+    expect(find.text('备忘插座号（仅本地记录，目标页内选口）'), findsNWidgets(2));
 
     // 点击第一张卡片的“离线排队 · 1号口”
     await tester.tap(find.text('离线排队 · 1号口'));
@@ -131,16 +134,16 @@ void main() {
 
     expect(find.byType(RuleSettingsScreen), findsOneWidget);
     await tester.scrollUntilVisible(
-      find.text('微云充 · 支付宝直达（推荐）'),
+      find.text('通用原始码 · 支付宝直达（默认，最稳妥）'),
       250,
       scrollable: find.byType(Scrollable).first,
     );
-    expect(find.text('微云充 · 支付宝直达（推荐）'), findsOneWidget);
+    expect(find.text('通用原始码 · 支付宝直达（默认，最稳妥）'), findsOneWidget);
     await tester.scrollUntilVisible(
-      find.text('微云充 · 带插座号直达支付页（实验）'),
+      find.text('微云充 · 原码保留参数 + 传插座号直达支付页'),
       250,
       scrollable: find.byType(Scrollable).first,
     );
-    expect(find.text('微云充 · 带插座号直达支付页（实验）'), findsOneWidget);
+    expect(find.text('微云充 · 原码保留参数 + 传插座号直达支付页'), findsOneWidget);
   });
 }

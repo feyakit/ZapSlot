@@ -7,6 +7,7 @@ import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../models/app_settings.dart';
 import '../providers/app_providers.dart';
 import '../services/url_rule_engine.dart';
 import '../theme/app_theme.dart';
@@ -163,7 +164,7 @@ class _OfflineScannerScreenState extends ConsumerState<OfflineScannerScreen> {
       if (sn != null && sn.isNotEmpty) {
         _isConfirming = true;
         final generatedUrl = UrlRuleEngine.previewUrl(
-          settings.globalUrlTemplate,
+          AppSettings.defaultFallbackRawUrlTemplate,
           sampleSn: sn,
           samplePort: 1,
         );
