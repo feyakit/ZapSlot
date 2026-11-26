@@ -126,6 +126,16 @@ class HomeScreen extends ConsumerWidget {
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
       child: Row(
         children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(11),
+            child: Image.asset(
+              'assets/images/logo.png',
+              width: 38,
+              height: 38,
+              fit: BoxFit.cover,
+            ),
+          ),
+          const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -133,7 +143,7 @@ class HomeScreen extends ConsumerWidget {
                 const Text(
                   '闪雀',
                   style: TextStyle(
-                    fontSize: 26,
+                    fontSize: 24,
                     fontWeight: FontWeight.w900,
                     color: AppColors.textPrimary,
                     letterSpacing: 0.5,

@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/images/logo.png" width="112" height="112" alt="闪雀 ZapSlot Logo" style="border-radius: 24px;" />
+</p>
+
 # 闪雀 (ZapSlot)
 
 一款零后端、极速冷启动、专为**地下车库无信号扫码充电**与**跳过小程序开屏广告**打造的 Flutter 跨平台工具应用（iOS / Android）。
