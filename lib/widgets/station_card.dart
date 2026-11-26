@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../models/charging_station.dart';
 import '../theme/app_theme.dart';
@@ -13,6 +14,7 @@ class StationCard extends StatefulWidget {
     required this.isQueuedHere,
     this.queuedPort,
     required this.onTrigger,
+    required this.onCopyLink,
     required this.onEdit,
     required this.onDelete,
   });
@@ -23,6 +25,7 @@ class StationCard extends StatefulWidget {
   final bool isQueuedHere;
   final int? queuedPort;
   final ValueChanged<int> onTrigger;
+  final ValueChanged<int> onCopyLink;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
 
@@ -161,13 +164,25 @@ class _StationCardState extends State<StationCard> {
                 ),
                 color: AppColors.surfaceElevated,
                 onSelected: (value) {
-                  if (value == 'edit') {
+                  if (value == 'copy_link') {
+                    widget.onCopyLink(_selectedPort);
+                  } else if (value == 'edit') {
                     widget.onEdit();
                   } else if (value == 'delete') {
                     widget.onDelete();
                   }
                 },
                 itemBuilder: (context) => const [
+                  PopupMenuItem(
+                    value: 'copy_link',
+                    child: Row(
+                      children: [
+                        Icon(Icons.link_rounded, size: 18),
+                        SizedBox(width: 8),
+                        Text('复制目标链接'),
+                      ],
+                    ),
+                  ),
                   PopupMenuItem(
                     value: 'edit',
                     child: Row(
@@ -220,7 +235,10 @@ class _StationCardState extends State<StationCard> {
                 final isSelected = port == _selectedPort;
                 return InkWell(
                   borderRadius: BorderRadius.circular(12),
-                  onTap: () => setState(() => _selectedPort = port),
+                  onTap: () {
+                    HapticFeedback.selectionClick();
+                    setState(() => _selectedPort = port);
+                  },
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 140),
                     width: 48,
@@ -268,7 +286,10 @@ class _StationCardState extends State<StationCard> {
                       : BorderSide.none,
                 ),
               ),
-              onPressed: () => widget.onTrigger(_selectedPort),
+              onPressed: () {
+                HapticFeedback.mediumImpact();
+                widget.onTrigger(_selectedPort);
+              },
               icon: Icon(
                 widget.isQueuedHere
                     ? Icons.hourglass_top_rounded

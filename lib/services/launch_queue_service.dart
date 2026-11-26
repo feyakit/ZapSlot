@@ -82,31 +82,44 @@ class LaunchQueueNotifier extends StateNotifier<LaunchQueueState> {
     required List<ChargingStation> Function() readStations,
     required AppSettings Function() readSettings,
     required Future<void> Function(String stationId, int port) onStationUsed,
+    Future<bool> Function()? checkInternet,
+    Future<bool> Function(Uri uri)? launchUriCallback,
+    Stream<List<ConnectivityResult>>? connectivityStream,
+    Stream<InternetStatus>? internetStatusStream,
+    bool autoInit = true,
   })  : _storage = storage,
         _notifications = notifications,
         _readStations = readStations,
         _readSettings = readSettings,
         _onStationUsed = onStationUsed,
-        _internetChecker = InternetConnection.createInstance(
-          checkInterval: const Duration(seconds: 3),
-          useDefaultOptions: false,
-          customCheckOptions: [
-            InternetCheckOption(
-              uri: Uri.parse('https://connect.rom.miui.com/generate_204'),
-              timeout: const Duration(seconds: 2),
-            ),
-            InternetCheckOption(
-              uri: Uri.parse('https://wifi.vivo.com.cn/generate_204'),
-              timeout: const Duration(seconds: 2),
-            ),
-            InternetCheckOption(
-              uri: Uri.parse('https://res.wx.qq.com'),
-              timeout: const Duration(seconds: 3),
-            ),
-          ],
-        ),
+        _checkInternetOverride = checkInternet,
+        _launchUriOverride = launchUriCallback,
+        _connectivityStreamOverride = connectivityStream,
+        _internetStatusStreamOverride = internetStatusStream,
+        _internetChecker = checkInternet == null && internetStatusStream == null
+            ? InternetConnection.createInstance(
+                checkInterval: const Duration(seconds: 3),
+                useDefaultOptions: false,
+                customCheckOptions: [
+                  InternetCheckOption(
+                    uri: Uri.parse('https://connect.rom.miui.com/generate_204'),
+                    timeout: const Duration(seconds: 2),
+                  ),
+                  InternetCheckOption(
+                    uri: Uri.parse('https://wifi.vivo.com.cn/generate_204'),
+                    timeout: const Duration(seconds: 2),
+                  ),
+                  InternetCheckOption(
+                    uri: Uri.parse('https://res.wx.qq.com'),
+                    timeout: const Duration(seconds: 3),
+                  ),
+                ],
+              )
+            : null,
         super(const LaunchQueueState()) {
-    _init();
+    if (autoInit) {
+      unawaited(initialize());
+    }
   }
 
   final StorageService _storage;
@@ -114,16 +127,23 @@ class LaunchQueueNotifier extends StateNotifier<LaunchQueueState> {
   final List<ChargingStation> Function() _readStations;
   final AppSettings Function() _readSettings;
   final Future<void> Function(String stationId, int port) _onStationUsed;
-  final InternetConnection _internetChecker;
+  final Future<bool> Function()? _checkInternetOverride;
+  final Future<bool> Function(Uri uri)? _launchUriOverride;
+  final Stream<List<ConnectivityResult>>? _connectivityStreamOverride;
+  final Stream<InternetStatus>? _internetStatusStreamOverride;
+  final InternetConnection? _internetChecker;
 
   StreamSubscription<List<ConnectivityResult>>? _connectivitySub;
   StreamSubscription<InternetStatus>? _internetSub;
   bool _isTriggeringRecovery = false;
 
-  Future<void> _init() async {
+  Future<void> initialize() async {
     _restorePersistedQueue();
 
-    _connectivitySub = Connectivity().onConnectivityChanged.listen((results) {
+    final connStream =
+        _connectivityStreamOverride ?? Connectivity().onConnectivityChanged;
+    _connectivitySub = connStream.listen((results) {
+      if (!mounted) return;
       final hasInterface = results.any((r) => r != ConnectivityResult.none);
       if (!hasInterface) {
         _handleNetworkTransition(false);
@@ -132,9 +152,14 @@ class LaunchQueueNotifier extends StateNotifier<LaunchQueueState> {
       }
     });
 
-    _internetSub = _internetChecker.onStatusChange.listen((status) {
-      _handleNetworkTransition(status == InternetStatus.connected);
-    });
+    final netStream =
+        _internetStatusStreamOverride ?? _internetChecker?.onStatusChange;
+    if (netStream != null) {
+      _internetSub = netStream.listen((status) {
+        if (!mounted) return;
+        _handleNetworkTransition(status == InternetStatus.connected);
+      });
+    }
 
     await refreshNetworkStatus();
   }
@@ -150,6 +175,7 @@ class LaunchQueueNotifier extends StateNotifier<LaunchQueueState> {
       return;
     }
 
+    if (!mounted) return;
     state = state.copyWith(
       pendingStation: matched,
       pendingPort: record.port,
@@ -159,14 +185,20 @@ class LaunchQueueNotifier extends StateNotifier<LaunchQueueState> {
   }
 
   /// 主动检测真实外网连通性（防止地库伪 Wi-Fi 误判为在线）。
-  Future<bool> refreshNetworkStatus() async {
+  Future<bool> refreshNetworkStatus({bool triggerRecovery = true}) async {
+    if (!mounted) return false;
     state = state.copyWith(isChecking: true);
     try {
-      final reachable = await _internetChecker.hasInternetAccess;
-      _handleNetworkTransition(reachable);
+      final reachable = _checkInternetOverride != null
+          ? await _checkInternetOverride()
+          : await (_internetChecker?.hasInternetAccess ?? Future.value(false));
+      if (!mounted) return reachable;
+      _handleNetworkTransition(reachable, triggerRecovery: triggerRecovery);
       return reachable;
     } catch (_) {
-      _handleNetworkTransition(false);
+      if (mounted) {
+        _handleNetworkTransition(false, triggerRecovery: triggerRecovery);
+      }
       return false;
     } finally {
       if (mounted) {
@@ -175,19 +207,26 @@ class LaunchQueueNotifier extends StateNotifier<LaunchQueueState> {
     }
   }
 
-  void _handleNetworkTransition(bool nextIsOnline) {
+  void _handleNetworkTransition(
+    bool nextIsOnline, {
+    bool triggerRecovery = true,
+  }) {
+    if (!mounted) return;
     final wasOnline = state.isOnline;
     if (state.isOnline != nextIsOnline || state.isChecking) {
       state = state.copyWith(isOnline: nextIsOnline, isChecking: false);
     }
 
-    if (!wasOnline && nextIsOnline && state.hasPendingTask) {
+    if (triggerRecovery &&
+        !wasOnline &&
+        nextIsOnline &&
+        state.hasPendingTask) {
       unawaited(_onNetworkRecoveredWithPendingTask());
     }
   }
 
   Future<void> _onNetworkRecoveredWithPendingTask() async {
-    if (_isTriggeringRecovery) return;
+    if (_isTriggeringRecovery || !mounted) return;
     final station = state.pendingStation;
     final port = state.pendingPort;
     if (station == null || port == null) return;
@@ -197,9 +236,11 @@ class LaunchQueueNotifier extends StateNotifier<LaunchQueueState> {
       final settings = _readSettings();
       final uri = UrlRuleEngine.buildTargetUri(station, port, settings);
       if (uri == null) {
-        state = state.copyWith(
-          statusMessage: '目标链接格式无效，请检查规则设置',
-        );
+        if (mounted) {
+          state = state.copyWith(
+            statusMessage: '目标链接格式无效，请检查规则设置',
+          );
+        }
         return;
       }
 
@@ -210,8 +251,10 @@ class LaunchQueueNotifier extends StateNotifier<LaunchQueueState> {
         targetUrl: uri.toString(),
       );
 
+      if (!mounted) return;
       if (state.isAppInForeground && settings.autoLaunchInForeground) {
         final launched = await _launchUri(uri);
+        if (!mounted) return;
         if (launched) {
           await _storage.clearPendingQueue();
           state = state.copyWith(
@@ -249,16 +292,25 @@ class LaunchQueueNotifier extends StateNotifier<LaunchQueueState> {
     final settings = _readSettings();
     final uri = UrlRuleEngine.buildTargetUri(station, safePort, settings);
     if (uri == null) {
-      state = state.copyWith(
-        statusMessage: '无法生成有效链接，请先检查规则模板或桩号',
-      );
+      if (mounted) {
+        state = state.copyWith(
+          statusMessage: '无法生成有效链接，请先检查规则模板或桩号',
+        );
+      }
       return QueueActionOutcome.launchFailed;
     }
 
-    // 触发前先做一次快速连通性确认，避免状态过期。
-    final currentlyOnline = await refreshNetworkStatus();
+    // 触发前先做一次快速连通性确认，避免状态过期，同时禁用旧任务自动恢复以防重复拉起。
+    final currentlyOnline = await refreshNetworkStatus(triggerRecovery: false);
+    if (!mounted) return QueueActionOutcome.launchFailed;
+
     if (currentlyOnline) {
       final launched = await _launchUri(uri);
+      if (!mounted) {
+        return launched
+            ? QueueActionOutcome.launchedImmediately
+            : QueueActionOutcome.launchFailed;
+      }
       if (launched) {
         await _storage.clearPendingQueue();
         await _notifications.cancelRecoveryNotification();
@@ -281,6 +333,7 @@ class LaunchQueueNotifier extends StateNotifier<LaunchQueueState> {
     }
 
     await _storage.savePendingQueue(stationId: station.id, port: safePort);
+    if (!mounted) return QueueActionOutcome.queuedOffline;
     state = state.copyWith(
       pendingStation: station.copyWith(lastUsedPort: safePort),
       pendingPort: safePort,
@@ -305,9 +358,11 @@ class LaunchQueueNotifier extends StateNotifier<LaunchQueueState> {
     }
 
     final launched = await _launchUri(uri);
+    if (!mounted) return launched;
     if (launched) {
       await _storage.clearPendingQueue();
       await _notifications.cancelRecoveryNotification();
+      if (!mounted) return true;
       state = state.copyWith(
         clearPendingStation: true,
         clearPendingPort: true,
@@ -328,6 +383,7 @@ class LaunchQueueNotifier extends StateNotifier<LaunchQueueState> {
   Future<void> cancelQueue() async {
     await _storage.clearPendingQueue();
     await _notifications.cancelRecoveryNotification();
+    if (!mounted) return;
     state = state.copyWith(
       clearPendingStation: true,
       clearPendingPort: true,
@@ -338,6 +394,7 @@ class LaunchQueueNotifier extends StateNotifier<LaunchQueueState> {
 
   /// 同步充电桩列表变更（例如用户修改了正在排队的桩别名/模板或删除了该桩）。
   void syncStations(List<ChargingStation> stations) {
+    if (!mounted) return;
     final pending = state.pendingStation;
     if (pending == null) return;
     final updated = stations.where((s) => s.id == pending.id).firstOrNull;
@@ -349,6 +406,7 @@ class LaunchQueueNotifier extends StateNotifier<LaunchQueueState> {
   }
 
   void setAppInForeground(bool isForeground) {
+    if (!mounted) return;
     state = state.copyWith(isAppInForeground: isForeground);
     if (isForeground) {
       unawaited(refreshNetworkStatus());
@@ -356,6 +414,7 @@ class LaunchQueueNotifier extends StateNotifier<LaunchQueueState> {
   }
 
   void clearStatusMessage() {
+    if (!mounted) return;
     state = state.copyWith(clearStatusMessage: true);
   }
 
@@ -377,6 +436,7 @@ class LaunchQueueNotifier extends StateNotifier<LaunchQueueState> {
           final launched = await _launchUri(uri);
           if (launched) {
             await _storage.clearPendingQueue();
+            if (!mounted) return;
             state = state.copyWith(
               clearPendingStation: true,
               clearPendingPort: true,
@@ -392,13 +452,16 @@ class LaunchQueueNotifier extends StateNotifier<LaunchQueueState> {
       // 回退到当前队列任务重试
     }
 
-    if (state.hasPendingTask) {
+    if (mounted && state.hasPendingTask) {
       await retryPendingNow();
     }
   }
 
   Future<bool> _launchUri(Uri uri) async {
     try {
+      if (_launchUriOverride != null) {
+        return await _launchUriOverride(uri);
+      }
       return await launchUrl(
         uri,
         mode: LaunchMode.externalApplication,

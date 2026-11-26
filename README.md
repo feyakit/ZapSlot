@@ -5,7 +5,7 @@
 ## 核心特性
 
 1. **地库离线扫桩 & 排队直达**
-   - 插好充电枪后，直接点选常用桩插座口（`1`–`10`）、使用离线双模扫描器（二维码 + 低光 ML Kit OCR 识桩号 + 手电筒）、或用大键盘输入 4 位尾号（如 `1715` 自动补全 `W52001715`）。
+   - 插好充电枪后，直接点选常用桩插座口（`1`–`10`）、使用离线双模扫描器（二维码 + 低光 ML Kit OCR 识桩号 + 手电筒 + `1x/2x/3x` 变焦）、或用大键盘输入 4 位尾号（如 `1715` 自动补全 `W52001715` 并自动同步上次插座号）。
    - 无网络时自动将任务持久化到本地队列；坐电梯上楼网络恢复瞬间：
      - 推送高优先级系统通知（点击通知即可直接跳转充电页面）；
      - 若 App 在前台且开启了自动跳转，立即触发 `launchUrl` 拉起外部应用。
@@ -15,32 +15,32 @@
 
 3. **三层优先级 URL 规则引擎（跳过开屏广告）**
    - **第一优先级：单桩独立覆盖链接**（适合填写微信固定 `weixin://dl/business/?t=...` 短链或特殊桩链接）。
-   - **第二优先级：全局模板**（支持 `{SN}` 与 `{PORT}` 占位符，适合支付宝小程序直达 `alipays://platformapi/startapp?...` 或自定义 HTTPS 模板）。
+   - **第二优先级：全局模板**（支持 `{SN}`、`{PORT}`、`{RAW_URL}`、`{RAW_URL_ENCODED}` 占位符，内置微云充支付宝内置浏览器直达 `alipays://platformapi/startapp?appId=20000067&url=...` 与通用二维码封装模板）。
    - **第三优先级：原始扫码链接**。
 
 ## 本地运行与打包
 
-> 当前工程已包含完整的 `lib/`、`test/`、`pubspec.yaml`、`AndroidManifest.xml` 与 `Info.plist`。请在已安装 Flutter SDK 的本机执行以下命令：
+> 当前工程已包含完整的 Flutter 源码（`lib/`、`test/`）以及预配置好的 Android / iOS 原生工程（`android/`、`ios/`），无需再执行 `flutter create`。
 
 ```bash
 # 1. 进入项目目录
-cd /home/ubuntu/.gemini/antigravity/scratch/charge_quick
+cd charge-quick
 
-# 2. 若需补齐本机 Android/iOS 原生工程壳文件（保留已有 Manifest 与 Info.plist）
-flutter create . --platforms=android,ios
-
-# 3. 安装依赖并运行单元测试
+# 2. 安装依赖并运行单元测试与组件测试
 flutter pub get
 flutter test
 
-# 4. 真机运行（建议用真机测试相机、手电筒与微信/支付宝 Scheme 跳转）
+# 3. 真机运行（建议用真机测试相机、手电筒、变焦与微信/支付宝 Scheme 跳转）
 flutter run --release
+
+# 4. 打包 Android APK
+flutter build apk --release
 ```
 
-### Android 注意事项
-- `android/app/src/main/AndroidManifest.xml` 已配置 `CAMERA`、`INTERNET`、`ACCESS_NETWORK_STATE`、`POST_NOTIFICATIONS` 权限以及 `<queries>` 中的 `weixin` / `alipays` / `https` / `http` Scheme。
-- 若使用 Android Gradle 构建，请确保 `minSdkVersion >= 21`（`mobile_scanner` 与 `google_mlkit_text_recognition` 要求）且 `compileSdk >= 34`。
+### Android 配置说明
+- `android/app/src/main/AndroidManifest.xml` 已配置 `CAMERA`、`INTERNET`、`ACCESS_NETWORK_STATE`、`POST_NOTIFICATIONS`、`VIBRATE` 权限以及 `<queries>` 中的 `weixin` / `alipays` / `https` / `http` Scheme。
+- `android/app/build.gradle.kts` 已配置 `minSdk >= 21`、`multiDexEnabled = true` 与 `coreLibraryDesugaring`（`flutter_local_notifications`、`mobile_scanner` 及 `google_mlkit_text_recognition` 依赖要求）。
 
-### iOS 注意事项
+### iOS 配置说明
 - `ios/Runner/Info.plist` 已配置 `NSCameraUsageDescription` 与 `LSApplicationQueriesSchemes`（`weixin`、`alipays`）。
-- 运行 `cd ios && pod install` 前请确认 `Podfile` 中的 iOS Deployment Target 不低于 `15.5`（Google ML Kit 依赖要求）。
+- `ios/Runner.xcodeproj/project.pbxproj` 已将 iOS Deployment Target 设为 `15.5`（Google ML Kit 依赖要求），在 macOS 上执行 `cd ios && pod install` 即可构建。

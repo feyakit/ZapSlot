@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/charging_station.dart';
 import '../providers/app_providers.dart';
 import '../services/launch_queue_service.dart';
+import '../services/url_rule_engine.dart';
 import '../theme/app_theme.dart';
 import '../widgets/quick_serial_modal.dart';
 import '../widgets/station_card.dart';
@@ -52,11 +54,40 @@ class HomeScreen extends ConsumerWidget {
                           portCount: settings.defaultPortCount,
                           isOnline: queueState.isOnline,
                           isQueuedHere: isQueuedHere,
-                          queuedPort: isQueuedHere ? queueState.pendingPort : null,
+                          queuedPort:
+                              isQueuedHere ? queueState.pendingPort : null,
                           onTrigger: (port) async {
                             await ref
                                 .read(launchQueueProvider.notifier)
                                 .triggerOrQueue(station, port);
+                          },
+                          onCopyLink: (port) async {
+                            final uri = UrlRuleEngine.buildTargetUri(
+                              station,
+                              port,
+                              settings,
+                            );
+                            if (uri == null) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('无法生成有效链接，请检查规则设置'),
+                                ),
+                              );
+                              return;
+                            }
+                            await Clipboard.setData(
+                              ClipboardData(text: uri.toString()),
+                            );
+                            if (!context.mounted) return;
+                            ScaffoldMessenger.of(context)
+                              ..hideCurrentSnackBar()
+                              ..showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    '已复制 ${station.serialNumber} ($port号口) 目标链接',
+                                  ),
+                                ),
+                              );
                           },
                           onEdit: () => _showStationEditor(
                             context,
@@ -214,7 +245,7 @@ class HomeScreen extends ConsumerWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  '${station.alias} · $port号插座',
+                  '${station.alias} · $port号插座${_formatQueuedElapsed(queueState.queuedAt)}',
                   style: const TextStyle(
                     fontSize: 12,
                     color: AppColors.textPrimary,
@@ -251,13 +282,21 @@ class HomeScreen extends ConsumerWidget {
     );
   }
 
+  String _formatQueuedElapsed(DateTime? queuedAt) {
+    if (queuedAt == null) return '';
+    final diff = DateTime.now().difference(queuedAt);
+    if (diff.inSeconds < 60) return ' · 刚刚排队';
+    if (diff.inMinutes < 60) return ' · 已排 ${diff.inMinutes} 分钟';
+    return ' · 已排 ${diff.inHours} 小时';
+  }
+
   Widget _buildEmptyState(BuildContext context) {
-    return Center(
+    return const Center(
       child: Padding(
-        padding: const EdgeInsets.all(32),
+        padding: EdgeInsets.all(32),
         child: Column(
           mainAxisSize: MainAxisSize.min,
-          children: const [
+          children: [
             Icon(
               Icons.ev_station_rounded,
               size: 64,
@@ -364,77 +403,143 @@ class HomeScreen extends ConsumerWidget {
     await showDialog<void>(
       context: context,
       builder: (dialogContext) {
-        return AlertDialog(
-          backgroundColor: AppColors.surface,
-          title: Text(existing == null ? '新增充电桩' : '编辑充电桩'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: aliasController,
-                  decoration: const InputDecoration(
-                    labelText: '桩位别名',
-                    hintText: '例如 B2-A区 1号桩',
-                  ),
+        final settings = ref.read(settingsProvider);
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            final draftStation = ChargingStation(
+              id: existing?.id ?? 'preview',
+              alias: aliasController.text.trim().isEmpty
+                  ? '预览桩'
+                  : aliasController.text.trim(),
+              serialNumber: snController.text.trim().isEmpty
+                  ? 'W52001715'
+                  : snController.text.trim().toUpperCase(),
+              rawUrl: rawUrlController.text.trim(),
+              customDeepLinkTemplate:
+                  customTemplateController.text.trim().isEmpty
+                      ? null
+                      : customTemplateController.text.trim(),
+              lastUsedPort: existing?.lastUsedPort ?? 1,
+              lastUsedDate: existing?.lastUsedDate ?? DateTime.now(),
+            );
+            final resolvedUri = UrlRuleEngine.buildTargetUri(
+              draftStation,
+              draftStation.lastUsedPort,
+              settings,
+            );
+
+            return AlertDialog(
+              backgroundColor: AppColors.surface,
+              title: Text(existing == null ? '新增充电桩' : '编辑充电桩'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    TextField(
+                      controller: aliasController,
+                      decoration: const InputDecoration(
+                        labelText: '桩位别名',
+                        hintText: '例如 B2-A区 1号桩',
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: snController,
+                      textCapitalization: TextCapitalization.characters,
+                      style: const TextStyle(fontFamily: 'monospace'),
+                      decoration: const InputDecoration(
+                        labelText: '桩号 (SN)',
+                        hintText: '例如 W52001715',
+                      ),
+                      onChanged: (_) => setDialogState(() {}),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: rawUrlController,
+                      decoration: const InputDecoration(
+                        labelText: '原始二维码链接（可选）',
+                        hintText: 'http://weixin.weiyunchong.com/...',
+                      ),
+                      onChanged: (_) => setDialogState(() {}),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: customTemplateController,
+                      decoration: const InputDecoration(
+                        labelText: '单桩独立覆盖链接 / Scheme（可选）',
+                        hintText: '留空则按全局规则，支持 {SN}/{PORT}/{PORT_0}',
+                      ),
+                      onChanged: (_) => setDialogState(() {}),
+                    ),
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: AppColors.bg,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: AppColors.border),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '当前生效目标链接（${draftStation.lastUsedPort}号口）',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            resolvedUri?.toString() ?? '无法生成有效链接，请检查规则',
+                            style: TextStyle(
+                              fontFamily: 'monospace',
+                              fontSize: 11,
+                              color: resolvedUri != null
+                                  ? AppColors.emerald
+                                  : AppColors.danger,
+                            ),
+                            maxLines: 3,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: snController,
-                  textCapitalization: TextCapitalization.characters,
-                  style: const TextStyle(fontFamily: 'monospace'),
-                  decoration: const InputDecoration(
-                    labelText: '桩号 (SN)',
-                    hintText: '例如 W52001715',
-                  ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: const Text('取消'),
                 ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: rawUrlController,
-                  decoration: const InputDecoration(
-                    labelText: '原始二维码链接（可选）',
-                    hintText: 'https://...',
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.emerald,
+                    foregroundColor: Colors.black,
                   ),
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: customTemplateController,
-                  decoration: const InputDecoration(
-                    labelText: '单桩独立覆盖链接 / Scheme（可选）',
-                    hintText: '留空则按全局规则，支持 {SN} 与 {PORT}',
-                  ),
+                  onPressed: () async {
+                    final sn = snController.text.trim().toUpperCase();
+                    if (sn.isEmpty) return;
+                    await ref.read(stationsProvider.notifier).upsertStation(
+                          id: existing?.id,
+                          alias: aliasController.text.trim(),
+                          serialNumber: sn,
+                          rawUrl: rawUrlController.text.trim(),
+                          customDeepLinkTemplate:
+                              customTemplateController.text.trim(),
+                          lastUsedPort: existing?.lastUsedPort ?? 1,
+                        );
+                    if (!dialogContext.mounted) return;
+                    Navigator.of(dialogContext).pop();
+                  },
+                  child: const Text('保存'),
                 ),
               ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('取消'),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.emerald,
-                foregroundColor: Colors.black,
-              ),
-              onPressed: () async {
-                final sn = snController.text.trim().toUpperCase();
-                if (sn.isEmpty) return;
-                await ref.read(stationsProvider.notifier).upsertStation(
-                      id: existing?.id,
-                      alias: aliasController.text.trim(),
-                      serialNumber: sn,
-                      rawUrl: rawUrlController.text.trim(),
-                      customDeepLinkTemplate:
-                          customTemplateController.text.trim(),
-                      lastUsedPort: existing?.lastUsedPort ?? 1,
-                    );
-                if (!dialogContext.mounted) return;
-                Navigator.of(dialogContext).pop();
-              },
-              child: const Text('保存'),
-            ),
-          ],
+            );
+          },
         );
       },
     );

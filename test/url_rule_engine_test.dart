@@ -97,5 +97,128 @@ void main() {
         'https://raw.example.com/pay?sn=W52001999&port=4',
       );
     });
+
+    test('real WeiYunChong QR codes (W52001414 & W52001715) end-to-end parsing',
+        () {
+      const qr1 =
+          'http://weixin.weiyunchong.com/payQRcode.html?device_no=W52001414';
+      const qr2 =
+          'http://weixin.weiyunchong.com/payQRcode.html?device_no=W52001715';
+
+      final sn1 = UrlRuleEngine.extractSerialNumber(qr1);
+      final sn2 = UrlRuleEngine.extractSerialNumber(qr2);
+      expect(sn1, 'W52001414');
+      expect(sn2, 'W52001715');
+
+      final baseTemplate = UrlRuleEngine.extractBaseTemplateFromUrl(qr1, sn1!);
+      expect(
+        baseTemplate,
+        'http://weixin.weiyunchong.com/payQRcode.html?device_no={SN}',
+      );
+
+      final alipayTemplate = UrlRuleEngine.buildAlipayH5Template(baseTemplate);
+      expect(
+        alipayTemplate,
+        'alipays://platformapi/startapp?appId=20000067&url=http%3A%2F%2Fweixin.weiyunchong.com%2FpayQRcode.html%3Fdevice_no%3D{SN}',
+      );
+
+      const defaultSettings = AppSettings();
+      final station1 = ChargingStation(
+        id: 'qr1',
+        alias: '车库桩 1414',
+        serialNumber: sn1,
+        rawUrl: qr1,
+        lastUsedPort: 8,
+        lastUsedDate: DateTime(2026, 11, 26),
+      );
+      final station2 = ChargingStation(
+        id: 'qr2',
+        alias: '车库桩 1715',
+        serialNumber: sn2!,
+        rawUrl: qr2,
+        lastUsedPort: 9,
+        lastUsedDate: DateTime(2026, 11, 26),
+      );
+
+      expect(
+        UrlRuleEngine.buildTargetUri(station1, 8, defaultSettings).toString(),
+        'alipays://platformapi/startapp?appId=20000067&url=http%3A%2F%2Fweixin.weiyunchong.com%2FpayQRcode.html%3Fdevice_no%3DW52001414',
+      );
+      expect(
+        UrlRuleEngine.buildTargetUri(station2, 9, defaultSettings).toString(),
+        'alipays://platformapi/startapp?appId=20000067&url=http%3A%2F%2Fweixin.weiyunchong.com%2FpayQRcode.html%3Fdevice_no%3DW52001715',
+      );
+    });
+
+    test('supports {RAW_URL_ENCODED} and falls back cleanly when rawUrl empty',
+        () {
+      const settings = AppSettings(
+        ruleMode: UrlRuleMode.globalTemplate,
+        globalUrlTemplate:
+            'alipays://platformapi/startapp?appId=20000067&url={RAW_URL_ENCODED}',
+      );
+
+      final withRaw = ChargingStation(
+        id: 'raw1',
+        alias: '微云充 1715',
+        serialNumber: 'W52001715',
+        rawUrl:
+            'http://weixin.weiyunchong.com/payQRcode.html?device_no=W52001715',
+        lastUsedDate: DateTime(2026, 11, 26),
+      );
+      expect(
+        UrlRuleEngine.buildTargetUri(withRaw, 3, settings).toString(),
+        'alipays://platformapi/startapp?appId=20000067&url=http%3A%2F%2Fweixin.weiyunchong.com%2FpayQRcode.html%3Fdevice_no%3DW52001715',
+      );
+
+      final withoutRaw = ChargingStation(
+        id: 'raw2',
+        alias: '手动输入桩',
+        serialNumber: 'W52001414',
+        rawUrl: '',
+        lastUsedDate: DateTime(2026, 11, 26),
+      );
+      expect(UrlRuleEngine.buildTargetUri(withoutRaw, 3, settings), isNull);
+    });
+
+    test('validateRegex and validateTemplate catch invalid inputs', () {
+      expect(UrlRuleEngine.validateRegex(r'W\d{8}'), isNull);
+      expect(UrlRuleEngine.validateRegex('[unclosed'), isNotNull);
+
+      expect(
+        UrlRuleEngine.validateTemplate(AppSettings.defaultGlobalTemplate),
+        isNull,
+      );
+      expect(UrlRuleEngine.validateTemplate(''), isNotNull);
+      expect(UrlRuleEngine.validateTemplate('no-scheme-url/{SN}'), isNotNull);
+    });
+
+    test('supports {PORT_0} (0-based gun_num) for WeiYunChong payQRcode.html',
+        () {
+      const settings = AppSettings(
+        ruleMode: UrlRuleMode.globalTemplate,
+        globalUrlTemplate:
+            'alipays://platformapi/startapp?appId=20000067&url=http%3A%2F%2Fweixin.weiyunchong.com%2FpayQRcode.html%3Fdevice_no%3D{SN}%26gun_num%3D{PORT_0}',
+      );
+      final station = ChargingStation(
+        id: 'qr2',
+        alias: '微云充 1715',
+        serialNumber: 'W52001715',
+        rawUrl:
+            'http://weixin.weiyunchong.com/payQRcode.html?device_no=W52001715',
+        lastUsedPort: 1,
+        lastUsedDate: DateTime(2026, 11, 26),
+      );
+
+      // 1号口 -> gun_num=0，10号口 -> gun_num=9
+      expect(
+        UrlRuleEngine.buildTargetUri(station, 1, settings).toString(),
+        'alipays://platformapi/startapp?appId=20000067&url=http%3A%2F%2Fweixin.weiyunchong.com%2FpayQRcode.html%3Fdevice_no%3DW52001715%26gun_num%3D0',
+      );
+      expect(
+        UrlRuleEngine.buildTargetUri(station, 10, settings).toString(),
+        'alipays://platformapi/startapp?appId=20000067&url=http%3A%2F%2Fweixin.weiyunchong.com%2FpayQRcode.html%3Fdevice_no%3DW52001715%26gun_num%3D9',
+      );
+    });
   });
 }

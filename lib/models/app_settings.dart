@@ -36,20 +36,41 @@ class AppSettings {
             : (defaultPortCount > 12 ? 12 : defaultPortCount);
 
   static const String defaultGlobalTemplate =
-      'https://charge.example.com/start?sn={SN}&port={PORT}';
+      'alipays://platformapi/startapp?appId=20000067&url=http%3A%2F%2Fweixin.weiyunchong.com%2FpayQRcode.html%3Fdevice_no%3D{SN}';
   static const String defaultSerialRegex = r'W\d{8}';
   static const String defaultQuickInputPrefix = 'W5200';
 
   static const List<UrlRulePreset> presets = [
     UrlRulePreset(
-      name: '原始 HTTPS 链接模板',
-      description: '替换桩号与端口参数后由系统/微信默认打开',
-      template: 'https://charge.example.com/start?sn={SN}&port={PORT}',
+      name: '微云充 · 支付宝直达（推荐）',
+      description: '通过支付宝内置浏览器直达微云充选口页，支持扫码、OCR 及 4 位尾号直达，免扫码跳过开屏广告',
+      template:
+          'alipays://platformapi/startapp?appId=20000067&url=http%3A%2F%2Fweixin.weiyunchong.com%2FpayQRcode.html%3Fdevice_no%3D{SN}',
       recommendedMode: UrlRuleMode.globalTemplate,
     ),
     UrlRulePreset(
-      name: '支付宝小程序直达',
-      description: '支持本地动态拼接 {SN} 与 {PORT}，免扫码跳过开屏广告',
+      name: '微云充 · 带插座号直达支付页（实验）',
+      description: '传入 gun_num={PORT_0}（0起始索引）跳过选口页直达支付页，首次使用请核对页面显示的插座号',
+      template:
+          'alipays://platformapi/startapp?appId=20000067&url=http%3A%2F%2Fweixin.weiyunchong.com%2FpayQRcode.html%3Fdevice_no%3D{SN}%26gun_num%3D{PORT_0}',
+      recommendedMode: UrlRuleMode.globalTemplate,
+    ),
+    UrlRulePreset(
+      name: '通用充电桩 · 支付宝打开原始码',
+      description: '自动将各品牌充电桩的原始二维码链接编码后交由支付宝内置浏览器直接打开',
+      template:
+          'alipays://platformapi/startapp?appId=20000067&url={RAW_URL_ENCODED}',
+      recommendedMode: UrlRuleMode.globalTemplate,
+    ),
+    UrlRulePreset(
+      name: '微云充 · 原始 H5 链接',
+      description: '直接拼接微云充原始网页地址并交由系统默认打开',
+      template: 'http://weixin.weiyunchong.com/payQRcode.html?device_no={SN}',
+      recommendedMode: UrlRuleMode.globalTemplate,
+    ),
+    UrlRulePreset(
+      name: '支付宝小程序直达模板',
+      description: '适合已知小程序 appId 与页面路径的充电品牌，支持动态拼接 {SN} 与 {PORT}',
       template:
           'alipays://platformapi/startapp?appId=2021000000000000&page=pages/charge/index&query=sn%3D{SN}%26port%3D{PORT}',
       recommendedMode: UrlRuleMode.globalTemplate,

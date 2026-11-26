@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../models/app_settings.dart';
 import '../providers/app_providers.dart';
@@ -56,15 +57,52 @@ class _RuleSettingsScreenState extends ConsumerState<RuleSettingsScreen> {
     setState(() {});
   }
 
+  Future<void> _testPreviewUrl(String preview) async {
+    final uri = Uri.tryParse(preview.trim());
+    if (uri == null || !uri.hasScheme) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('当前预览链接无效，无法测试跳转')),
+      );
+      return;
+    }
+    final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!mounted) return;
+    if (!launched) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('未能唤起 ${uri.scheme} 应用，请确认手机已安装对应 App'),
+        ),
+      );
+    }
+  }
+
   Future<void> _save() async {
+    final templateText = _templateController.text.trim().isEmpty
+        ? AppSettings.defaultGlobalTemplate
+        : _templateController.text.trim();
+    final regexText = _regexController.text.trim().isEmpty
+        ? AppSettings.defaultSerialRegex
+        : _regexController.text.trim();
+
+    final templateError = UrlRuleEngine.validateTemplate(templateText);
+    if (templateError != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(templateError)),
+      );
+      return;
+    }
+    final regexError = UrlRuleEngine.validateRegex(regexText);
+    if (regexError != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(regexError)),
+      );
+      return;
+    }
+
     final next = AppSettings(
       ruleMode: _ruleMode,
-      globalUrlTemplate: _templateController.text.trim().isEmpty
-          ? AppSettings.defaultGlobalTemplate
-          : _templateController.text.trim(),
-      serialRegex: _regexController.text.trim().isEmpty
-          ? AppSettings.defaultSerialRegex
-          : _regexController.text.trim(),
+      globalUrlTemplate: templateText,
+      serialRegex: regexText,
       quickInputPrefix: _prefixController.text.trim().isEmpty
           ? AppSettings.defaultQuickInputPrefix
           : _prefixController.text.trim().toUpperCase(),
@@ -81,11 +119,18 @@ class _RuleSettingsScreenState extends ConsumerState<RuleSettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final samplePrefix = _prefixController.text.trim().isEmpty
+        ? AppSettings.defaultQuickInputPrefix
+        : _prefixController.text.trim().toUpperCase();
     final preview = UrlRuleEngine.previewUrl(
       _templateController.text,
-      sampleSn: '${_prefixController.text.trim().toUpperCase()}1715',
+      sampleSn: '${samplePrefix}1715',
       samplePort: 3,
     );
+    final templateError = _templateController.text.trim().isEmpty
+        ? null
+        : UrlRuleEngine.validateTemplate(_templateController.text);
+    final regexError = UrlRuleEngine.validateRegex(_regexController.text);
 
     return Scaffold(
       appBar: AppBar(
@@ -135,7 +180,8 @@ class _RuleSettingsScreenState extends ConsumerState<RuleSettingsScreen> {
           const SizedBox(height: 14),
           _SectionCard(
             title: '2. 全局 URL / Deep Link 模板',
-            subtitle: '支持 {SN}（桩号）与 {PORT}（插座口）动态替换，跳过开屏广告直达小程序或网页。',
+            subtitle:
+                '支持 {SN}（桩号）、{PORT}（插座口）与 {RAW_URL_ENCODED}（编码后原始码链接），跳过开屏广告直达小程序或支付宝。',
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -147,8 +193,9 @@ class _RuleSettingsScreenState extends ConsumerState<RuleSettingsScreen> {
                     fontFamily: 'monospace',
                     fontSize: 13,
                   ),
-                  decoration: const InputDecoration(
-                    hintText: '输入 https:// 或 alipays:// / weixin:// 模板',
+                  decoration: InputDecoration(
+                    hintText: '输入 alipays:// / weixin:// / https:// 模板',
+                    errorText: templateError,
                   ),
                   onChanged: (_) => setState(() {}),
                 ),
@@ -169,6 +216,18 @@ class _RuleSettingsScreenState extends ConsumerState<RuleSettingsScreen> {
                       side: const BorderSide(color: AppColors.cyan),
                       onPressed: () => _insertPlaceholder('{PORT}'),
                     ),
+                    ActionChip(
+                      label: const Text('插入 {PORT_0}'),
+                      backgroundColor: AppColors.surfaceElevated,
+                      side: const BorderSide(color: AppColors.cyan),
+                      onPressed: () => _insertPlaceholder('{PORT_0}'),
+                    ),
+                    ActionChip(
+                      label: const Text('插入 {RAW_URL_ENCODED}'),
+                      backgroundColor: AppColors.surfaceElevated,
+                      side: const BorderSide(color: AppColors.cyan),
+                      onPressed: () => _insertPlaceholder('{RAW_URL_ENCODED}'),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 12),
@@ -183,13 +242,38 @@ class _RuleSettingsScreenState extends ConsumerState<RuleSettingsScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        '实时渲染预览（示例 3号口）',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.textSecondary,
-                        ),
+                      Row(
+                        children: [
+                          const Expanded(
+                            child: Text(
+                              '实时渲染预览（示例 3号口）',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                          ),
+                          if (preview.isNotEmpty && templateError == null)
+                            InkWell(
+                              borderRadius: BorderRadius.circular(8),
+                              onTap: () => _testPreviewUrl(preview),
+                              child: const Padding(
+                                padding: EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 2,
+                                ),
+                                child: Text(
+                                  '测试跳转 ↗',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w800,
+                                    color: AppColors.cyan,
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
                       const SizedBox(height: 4),
                       Text(
@@ -279,10 +363,12 @@ class _RuleSettingsScreenState extends ConsumerState<RuleSettingsScreen> {
                 TextField(
                   controller: _regexController,
                   style: const TextStyle(fontFamily: 'monospace'),
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     labelText: '桩号提取正则',
                     hintText: r'W\d{8}',
+                    errorText: regexError,
                   ),
+                  onChanged: (_) => setState(() {}),
                 ),
                 const SizedBox(height: 12),
                 TextField(

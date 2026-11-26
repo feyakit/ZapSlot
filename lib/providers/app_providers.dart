@@ -36,6 +36,7 @@ class StationsNotifier extends StateNotifier<List<ChargingStation>> {
     required String serialNumber,
     required String rawUrl,
     String? customDeepLinkTemplate,
+    bool preserveCustomTemplateIfNull = false,
     int lastUsedPort = 1,
   }) async {
     final normalizedSn = serialNumber.trim().toUpperCase();
@@ -51,16 +52,16 @@ class StationsNotifier extends StateNotifier<List<ChargingStation>> {
     late ChargingStation saved;
     if (existingIndex >= 0) {
       final current = state[existingIndex];
+      final hasProvidedCustom =
+          trimmedCustom != null && trimmedCustom.isNotEmpty;
+      final shouldClearCustom =
+          !preserveCustomTemplateIfNull && !hasProvidedCustom;
       saved = current.copyWith(
         alias: trimmedAlias,
         serialNumber: normalizedSn,
         rawUrl: trimmedRaw.isNotEmpty ? trimmedRaw : current.rawUrl,
-        customDeepLinkTemplate:
-            (trimmedCustom != null && trimmedCustom.isNotEmpty)
-                ? trimmedCustom
-                : null,
-        clearCustomDeepLinkTemplate:
-            trimmedCustom == null || trimmedCustom.isEmpty,
+        customDeepLinkTemplate: hasProvidedCustom ? trimmedCustom : null,
+        clearCustomDeepLinkTemplate: shouldClearCustom,
         lastUsedPort: lastUsedPort,
         lastUsedDate: now,
       );

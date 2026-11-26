@@ -1,20 +1,19 @@
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../providers/app_providers.dart';
-import '../services/launch_queue_service.dart';
 import '../services/url_rule_engine.dart';
 import '../theme/app_theme.dart';
 
 enum ScannerMode { qr, ocr }
 
-/// 离线双模扫描页：单相机引擎同时支持 QR 解码与低照度 ML Kit OCR 桩号识别，并带手电筒控制。
+/// 离线双模扫描页：单相机引擎同时支持 QR 解码与低照度 ML Kit OCR 桩号识别，并带手电筒与变焦控制。
 class OfflineScannerScreen extends ConsumerStatefulWidget {
   const OfflineScannerScreen({super.key});
 
@@ -24,15 +23,19 @@ class OfflineScannerScreen extends ConsumerStatefulWidget {
 }
 
 class _OfflineScannerScreenState extends ConsumerState<OfflineScannerScreen> {
+  static const List<double> _zoomLevels = [0.0, 0.35, 0.7];
+  static const List<String> _zoomLabels = ['1x', '2x', '3x'];
+
   late final MobileScannerController _scannerController;
   late final TextRecognizer _textRecognizer;
 
   ScannerMode _mode = ScannerMode.qr;
+  int _zoomIndex = 0;
   bool _isConfirming = false;
   bool _isRunningOcr = false;
   DateTime _lastOcrRun = DateTime.fromMillisecondsSinceEpoch(0);
   Uint8List? _latestFrameBytes;
-  String _hintText = '对准充电桩二维码，断网即可瞬间识别';
+  String _hintText = '对准充电桩二维码，断网即可瞬间识别（反光/小码可点右上角 2x 变焦）';
 
   @override
   void initState() {
@@ -51,11 +54,23 @@ class _OfflineScannerScreenState extends ConsumerState<OfflineScannerScreen> {
     super.dispose();
   }
 
+  Future<void> _cycleZoom() async {
+    HapticFeedback.selectionClick();
+    final nextIndex = (_zoomIndex + 1) % _zoomLevels.length;
+    setState(() => _zoomIndex = nextIndex);
+    try {
+      await _scannerController.setZoomScale(_zoomLevels[nextIndex]);
+    } catch (_) {
+      // 部分设备不支持平滑变焦时静默忽略
+    }
+  }
+
   void _switchMode(ScannerMode next) {
+    HapticFeedback.selectionClick();
     setState(() {
       _mode = next;
       _hintText = next == ScannerMode.qr
-          ? '对准充电桩二维码，断网即可瞬间识别'
+          ? '对准充电桩二维码，断网即可瞬间识别（反光/小码可点右上角 2x 变焦）'
           : '对准设备上印刷的桩号（如 W52001715），暗光可点右上角手电筒';
     });
   }
@@ -88,6 +103,7 @@ class _OfflineScannerScreenState extends ConsumerState<OfflineScannerScreen> {
   Future<void> _handleQrDetected(String rawValue) async {
     if (_isConfirming) return;
     _isConfirming = true;
+    HapticFeedback.mediumImpact();
 
     final settings = ref.read(settingsProvider);
     final extractedSn = UrlRuleEngine.extractSerialNumber(
@@ -99,6 +115,10 @@ class _OfflineScannerScreenState extends ConsumerState<OfflineScannerScreen> {
         ? UrlRuleEngine.extractBaseTemplateFromUrl(rawValue, extractedSn)
         : '';
 
+    try {
+      await _scannerController.stop();
+    } catch (_) {}
+
     await _showResultConfirmationSheet(
       detectedSerial: extractedSn,
       rawUrl: rawValue,
@@ -109,6 +129,9 @@ class _OfflineScannerScreenState extends ConsumerState<OfflineScannerScreen> {
 
     if (mounted) {
       _isConfirming = false;
+      try {
+        await _scannerController.start();
+      } catch (_) {}
     }
   }
 
@@ -349,11 +372,13 @@ class _OfflineScannerScreenState extends ConsumerState<OfflineScannerScreen> {
                           contentPadding: EdgeInsets.zero,
                           activeColor: AppColors.cyan,
                           title: const Text(
-                            '同步提取为全局 URL 基础模板',
+                            '同步提取为支付宝直达全局模板',
                             style: TextStyle(fontSize: 14),
                           ),
                           subtitle: Text(
-                            suggestedBaseTemplate,
+                            UrlRuleEngine.buildAlipayH5Template(
+                              suggestedBaseTemplate,
+                            ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
@@ -386,7 +411,10 @@ class _OfflineScannerScreenState extends ConsumerState<OfflineScannerScreen> {
                                   await ref
                                       .read(settingsProvider.notifier)
                                       .updateGlobalTemplate(
-                                          suggestedBaseTemplate);
+                                        UrlRuleEngine.buildAlipayH5Template(
+                                          suggestedBaseTemplate,
+                                        ),
+                                      );
                                 }
                                 await ref
                                     .read(stationsProvider.notifier)
@@ -395,6 +423,7 @@ class _OfflineScannerScreenState extends ConsumerState<OfflineScannerScreen> {
                                       alias: aliasController.text.trim(),
                                       serialNumber: sn,
                                       rawUrl: rawUrl,
+                                      preserveCustomTemplateIfNull: true,
                                       lastUsedPort: selectedPort,
                                     );
                                 if (!sheetContext.mounted || !mounted) return;
@@ -424,7 +453,10 @@ class _OfflineScannerScreenState extends ConsumerState<OfflineScannerScreen> {
                                   await ref
                                       .read(settingsProvider.notifier)
                                       .updateGlobalTemplate(
-                                          suggestedBaseTemplate);
+                                        UrlRuleEngine.buildAlipayH5Template(
+                                          suggestedBaseTemplate,
+                                        ),
+                                      );
                                 }
                                 final saved = await ref
                                     .read(stationsProvider.notifier)
@@ -433,6 +465,7 @@ class _OfflineScannerScreenState extends ConsumerState<OfflineScannerScreen> {
                                       alias: aliasController.text.trim(),
                                       serialNumber: sn,
                                       rawUrl: rawUrl,
+                                      preserveCustomTemplateIfNull: true,
                                       lastUsedPort: selectedPort,
                                     );
                                 final outcome = await ref
@@ -474,6 +507,42 @@ class _OfflineScannerScreenState extends ConsumerState<OfflineScannerScreen> {
           MobileScanner(
             controller: _scannerController,
             onDetect: _onDetect,
+            errorBuilder: (context, error, _) {
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(28),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.no_photography_rounded,
+                        size: 54,
+                        color: AppColors.amber,
+                      ),
+                      const SizedBox(height: 12),
+                      const Text(
+                        '无法启动相机',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        error.errorDetails?.message ??
+                            '请检查相机权限，或返回主页使用“输编号直达”',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
           ),
           _ScannerViewfinderOverlay(mode: _mode),
           SafeArea(
@@ -514,6 +583,33 @@ class _OfflineScannerScreenState extends ConsumerState<OfflineScannerScreen> {
                         ),
                       ),
                       const Spacer(),
+                      Material(
+                        color: _zoomIndex > 0
+                            ? AppColors.cyan.withValues(alpha: 0.9)
+                            : Colors.black.withValues(alpha: 0.65),
+                        shape: const CircleBorder(),
+                        child: InkWell(
+                          customBorder: const CircleBorder(),
+                          onTap: _cycleZoom,
+                          child: SizedBox(
+                            width: 44,
+                            height: 44,
+                            child: Center(
+                              child: Text(
+                                _zoomLabels[_zoomIndex],
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w800,
+                                  color: _zoomIndex > 0
+                                      ? Colors.black
+                                      : AppColors.textPrimary,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
                       ValueListenableBuilder<MobileScannerState>(
                         valueListenable: _scannerController,
                         builder: (context, state, _) {

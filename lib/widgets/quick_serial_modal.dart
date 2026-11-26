@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../models/charging_station.dart';
 import '../providers/app_providers.dart';
-import '../services/launch_queue_service.dart';
 import '../services/url_rule_engine.dart';
 import '../theme/app_theme.dart';
 
@@ -18,6 +17,8 @@ class QuickSerialModal extends ConsumerStatefulWidget {
 class _QuickSerialModalState extends ConsumerState<QuickSerialModal> {
   String _suffixDigits = '';
   bool _manualMode = false;
+  bool _portManuallySelected = false;
+  String? _lastSyncedStationId;
   late TextEditingController _manualController;
   int _selectedPort = 1;
 
@@ -41,21 +42,41 @@ class _QuickSerialModalState extends ConsumerState<QuickSerialModal> {
     return '$prefix$_suffixDigits'.toUpperCase();
   }
 
-  void _appendDigit(String digit) {
+  void _syncMatchedStationPort(String prefix) {
+    if (_portManuallySelected) return;
+    final serial = _currentSerial(prefix);
+    final stations = ref.read(stationsProvider);
+    final matched =
+        stations.where((s) => s.serialNumber == serial).firstOrNull;
+    if (matched != null && matched.id != _lastSyncedStationId) {
+      final maxPort = ref.read(settingsProvider).defaultPortCount;
+      _selectedPort = matched.lastUsedPort.clamp(1, maxPort);
+      _lastSyncedStationId = matched.id;
+    } else if (matched == null) {
+      _lastSyncedStationId = null;
+    }
+  }
+
+  void _appendDigit(String digit, String prefix) {
     if (_suffixDigits.length >= 4) return;
+    HapticFeedback.lightImpact();
     setState(() {
       _suffixDigits += digit;
+      _syncMatchedStationPort(prefix);
     });
   }
 
-  void _backspace() {
+  void _backspace(String prefix) {
     if (_suffixDigits.isEmpty) return;
+    HapticFeedback.selectionClick();
     setState(() {
       _suffixDigits = _suffixDigits.substring(0, _suffixDigits.length - 1);
+      _syncMatchedStationPort(prefix);
     });
   }
 
   Future<void> _submit() async {
+    HapticFeedback.mediumImpact();
     final settings = ref.read(settingsProvider);
     final rawSn = _currentSerial(settings.quickInputPrefix);
     final extracted = UrlRuleEngine.extractSerialNumber(
@@ -247,7 +268,9 @@ class _QuickSerialModalState extends ConsumerState<QuickSerialModal> {
                     labelText: '完整充电桩编号',
                     hintText: '例如 W52001715',
                   ),
-                  onChanged: (_) => setState(() {}),
+                  onChanged: (_) => setState(() {
+                    _syncMatchedStationPort(prefix);
+                  }),
                 ),
               if (matched != null) ...[
                 const SizedBox(height: 8),
@@ -291,7 +314,13 @@ class _QuickSerialModalState extends ConsumerState<QuickSerialModal> {
                     final selected = port == _selectedPort;
                     return InkWell(
                       borderRadius: BorderRadius.circular(10),
-                      onTap: () => setState(() => _selectedPort = port),
+                      onTap: () {
+                        HapticFeedback.selectionClick();
+                        setState(() {
+                          _selectedPort = port;
+                          _portManuallySelected = true;
+                        });
+                      },
                       child: Container(
                         width: 44,
                         alignment: Alignment.center,
@@ -322,7 +351,7 @@ class _QuickSerialModalState extends ConsumerState<QuickSerialModal> {
               ),
               if (!_manualMode) ...[
                 const SizedBox(height: 16),
-                _buildKeypad(),
+                _buildKeypad(prefix),
               ],
               const SizedBox(height: 16),
               SizedBox(
@@ -361,7 +390,7 @@ class _QuickSerialModalState extends ConsumerState<QuickSerialModal> {
     );
   }
 
-  Widget _buildKeypad() {
+  Widget _buildKeypad(String prefix) {
     const rows = [
       ['1', '2', '3'],
       ['4', '5', '6'],
@@ -387,11 +416,15 @@ class _QuickSerialModalState extends ConsumerState<QuickSerialModal> {
                         borderRadius: BorderRadius.circular(12),
                         onTap: () {
                           if (key == '清空') {
-                            setState(() => _suffixDigits = '');
+                            HapticFeedback.selectionClick();
+                            setState(() {
+                              _suffixDigits = '';
+                              _syncMatchedStationPort(prefix);
+                            });
                           } else if (key == '退格') {
-                            _backspace();
+                            _backspace(prefix);
                           } else {
-                            _appendDigit(key);
+                            _appendDigit(key, prefix);
                           }
                         },
                         child: Center(
