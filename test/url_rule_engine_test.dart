@@ -253,10 +253,11 @@ void main() {
       expect(parsedInner.queryParameters['gun_num'], '7');
       expect(UrlRuleEngine.templateUsesPort(signedStation, settings), isTrue);
 
+      // 默认设置现在就走带插座号的直达模板
       const defaultSettings = AppSettings();
       expect(
         UrlRuleEngine.templateUsesPort(signedStation, defaultSettings),
-        isFalse,
+        isTrue,
       );
     });
 
