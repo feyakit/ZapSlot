@@ -165,7 +165,7 @@ class LaunchQueueNotifier extends StateNotifier<LaunchQueueState> {
       ..connectionTimeout = const Duration(milliseconds: 1200);
     try {
       final request = await client
-          .getUrl(Uri.parse('http://connect.rom.miui.com/generate_204'))
+          .getUrl(Uri.parse('https://connect.rom.miui.com/generate_204'))
           .timeout(const Duration(milliseconds: 1200));
       final response = await request
           .close()
@@ -236,9 +236,13 @@ class LaunchQueueNotifier extends StateNotifier<LaunchQueueState> {
     if (!mounted) return false;
     state = state.copyWith(isChecking: true);
     try {
-      final reachable = _checkInternetOverride != null
+      var reachable = _checkInternetOverride != null
           ? await _checkInternetOverride()
           : await (_internetChecker?.hasInternetAccess ?? Future.value(false));
+      if (!reachable && _checkInternetOverride == null) {
+        // 部分 ROM / 第三方检测库会误报离线，用自带 HTTPS 探针复核一次再下结论。
+        reachable = await _quickProbe();
+      }
       if (!mounted) return reachable;
       _handleNetworkTransition(reachable, triggerRecovery: triggerRecovery);
       return reachable;
