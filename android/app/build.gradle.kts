@@ -54,6 +54,11 @@ android {
 
     buildTypes {
         release {
+            // ML Kit 的组件注册靠反射加载（ComponentDiscovery），
+            // 一旦 R8 混淆/裁剪掉 registrar 的无参构造，扫码与 OCR 会直接 NPE（
+            // "getClass() on a null object reference"）。这里关掉压缩，稳定优先。
+            isMinifyEnabled = false
+            isShrinkResources = false
             signingConfig = if (keystorePropertiesFile.exists()) {
                 signingConfigs.getByName("release")
             } else {

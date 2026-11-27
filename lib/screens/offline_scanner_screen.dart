@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -247,6 +248,66 @@ class _OfflineScannerScreenState extends ConsumerState<OfflineScannerScreen> {
         ),
       );
     return true;
+  }
+
+  /// 从图库选一张二维码/桩号照片来识别：相机不可用或码太糊时都走这里。
+  Future<void> _pickImageAndAnalyze() async {
+    final picked = await ImagePicker().pickImage(source: ImageSource.gallery);
+    if (picked == null) return;
+    if (!mounted) return;
+    setState(() {
+      _hintText = '正在识别图片…';
+    });
+
+    try {
+      final capture = await _scannerController.analyzeImage(picked.path);
+      final codes = (capture?.barcodes ?? const [])
+          .map((barcode) => barcode.rawValue?.trim() ?? '')
+          .where((value) => value.isNotEmpty)
+          .toList();
+      if (codes.isNotEmpty) {
+        await _handleQrDetected(codes.first);
+        return;
+      }
+    } catch (_) {
+      // 二维码解码失败时继续尝试 OCR
+    }
+
+    try {
+      final settings = ref.read(settingsProvider);
+      final inputImage = InputImage.fromFilePath(picked.path);
+      final recognized = await _textRecognizer.processImage(inputImage);
+      final sn = UrlRuleEngine.extractSerialNumber(
+        recognized.text,
+        regexPattern: settings.serialRegex,
+      );
+      if (sn != null && sn.isNotEmpty) {
+        final generatedUrl = UrlRuleEngine.previewUrl(
+          AppSettings.defaultFallbackRawUrlTemplate,
+          sampleSn: sn,
+          samplePort: 1,
+        );
+        if (!await _autoCollectIfEnabled(generatedUrl, sn) && mounted) {
+          await _showResultConfirmationSheet(
+            detectedSerial: sn,
+            rawUrl: generatedUrl,
+            suggestedBaseTemplate: null,
+            sourceLabel: '图库照片 OCR 识别',
+          );
+        }
+        if (mounted) {
+          setState(() => _hintText = '已识别桩号 $sn');
+        }
+        return;
+      }
+      if (mounted) {
+        setState(() => _hintText = '这张图里没找到二维码或桩号，换一张清晰的试试');
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _hintText = '图片识别失败：$e');
+      }
+    }
   }
 
   Future<void> _showResultConfirmationSheet({
@@ -588,6 +649,26 @@ class _OfflineScannerScreenState extends ConsumerState<OfflineScannerScreen> {
                         style: const TextStyle(
                           fontSize: 13,
                           color: AppColors.textSecondary,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          minimumSize: const Size(220, 46),
+                          side: const BorderSide(color: AppColors.cyan),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        onPressed: _pickImageAndAnalyze,
+                        icon: const Icon(
+                          Icons.photo_library_rounded,
+                          size: 18,
+                          color: AppColors.cyan,
+                        ),
+                        label: const Text(
+                          '从图库选二维码',
+                          style: TextStyle(color: AppColors.cyan),
                         ),
                       ),
                     ],
