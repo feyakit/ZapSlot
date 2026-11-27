@@ -716,6 +716,11 @@ class _OfflineScannerScreenState extends ConsumerState<OfflineScannerScreen> {
                         ),
                       ),
                       const Spacer(),
+                      _CircleIconButton(
+                        icon: Icons.photo_library_rounded,
+                        onTap: _pickImageAndAnalyze,
+                      ),
+                      const SizedBox(width: 8),
                       Material(
                         color: _zoomIndex > 0
                             ? AppColors.cyan.withValues(alpha: 0.9)
