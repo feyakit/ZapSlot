@@ -118,7 +118,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('选号直达支付 · 0号口'), findsOneWidget);
-    expect(find.text('外网已畅通 · 点击即可跳过广告直达'), findsOneWidget);
+    expect(find.text('外网已畅通 · 点击即可直达支付宝选套餐'), findsOneWidget);
     await tester.scrollUntilVisible(
       find.text('选号直达支付 · 1号口'),
       250,

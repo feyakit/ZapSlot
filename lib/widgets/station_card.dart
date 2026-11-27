@@ -4,7 +4,7 @@ import 'package:flutter/services.dart';
 import '../models/charging_station.dart';
 import '../theme/app_theme.dart';
 
-/// 充电桩大卡片：支持单手横向快选插座口（1-10）及一键唤醒 / 离线排队。
+/// 充电桩大卡片：5×2 轻量直排插座网格（零 shrinkWrap 开销），支持单手快选、长按复制链接及防连点触发。
 class StationCard extends StatefulWidget {
   const StationCard({
     super.key,
@@ -28,7 +28,7 @@ class StationCard extends StatefulWidget {
   final int? queuedPort;
   final bool usesPort;
   final int portIndexBase;
-  final ValueChanged<int> onTrigger;
+  final Future<void> Function(int port) onTrigger;
   final ValueChanged<int> onCopyLink;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
@@ -39,10 +39,11 @@ class StationCard extends StatefulWidget {
 
 class _StationCardState extends State<StationCard> {
   late int _selectedPort;
+  bool _isSubmitting = false;
 
-  /// 卡片上展示的插座编号（0 起始即与微云充页面一致）
-  String _socket(int port) => (port - 1 + widget.portIndexBase).clamp(0, 99).toString();
-
+  /// 卡片上展示的插座编号（0 起始即与微云充/莱充页面一致）
+  String _socket(int port) =>
+      (port - 1 + widget.portIndexBase).clamp(0, 99).toString();
 
   @override
   void initState() {
@@ -59,6 +60,19 @@ class _StationCardState extends State<StationCard> {
     }
   }
 
+  Future<void> _handleTrigger() async {
+    if (_isSubmitting) return;
+    HapticFeedback.mediumImpact();
+    setState(() => _isSubmitting = true);
+    try {
+      await widget.onTrigger(_selectedPort);
+    } finally {
+      if (mounted) {
+        setState(() => _isSubmitting = false);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final hasCustomRule =
@@ -70,9 +84,7 @@ class _StationCardState extends State<StationCard> {
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: widget.isQueuedHere
-              ? AppColors.amber
-              : AppColors.border,
+          color: widget.isQueuedHere ? AppColors.amber : AppColors.border,
           width: widget.isQueuedHere ? 1.8 : 1,
         ),
       ),
@@ -223,70 +235,39 @@ class _StationCardState extends State<StationCard> {
             ],
           ),
           const SizedBox(height: 14),
-          Text(
-            widget.usesPort
-                ? '选择插座编号（直达传参）'
-                : '备忘插座号（仅本地记录，目标页内选口）',
-            style: const TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: AppColors.textSecondary,
-            ),
-          ),
-          const SizedBox(height: 8),
-          GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: widget.portCount,
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 5,
-              mainAxisSpacing: 8,
-              crossAxisSpacing: 8,
-              childAspectRatio: 1.25,
-            ),
-            itemBuilder: (context, index) {
-              final port = index + 1;
-              final isSelected = port == _selectedPort;
-              return InkWell(
-                borderRadius: BorderRadius.circular(12),
-                onTap: () {
-                  HapticFeedback.selectionClick();
-                  setState(() => _selectedPort = port);
-                },
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 140),
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: isSelected
-                        ? accentColor.withValues(alpha: 0.22)
-                        : AppColors.surfaceElevated,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: isSelected ? accentColor : AppColors.border,
-                      width: isSelected ? 1.8 : 1,
-                    ),
-                  ),
-                  child: Text(
-                    _socket(port),
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w800,
-                      color: isSelected ? accentColor : AppColors.textPrimary,
-                    ),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  widget.usesPort
+                      ? '选择插座编号（直达传参）'
+                      : '备忘插座号（仅本地记录，目标页内选口）',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textSecondary,
                   ),
                 ),
-              );
-            },
+              ),
+              const Text(
+                '长按可复制',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ],
           ),
+          const SizedBox(height: 8),
+          _buildSocketGrid(accentColor),
           const SizedBox(height: 14),
           SizedBox(
             width: double.infinity,
             height: 54,
             child: ElevatedButton.icon(
               style: ElevatedButton.styleFrom(
-                backgroundColor: widget.isQueuedHere
-                    ? AppColors.amberDark
-                    : accentColor,
+                backgroundColor:
+                    widget.isQueuedHere ? AppColors.amberDark : accentColor,
                 foregroundColor:
                     widget.isQueuedHere ? AppColors.amber : Colors.black,
                 elevation: 0,
@@ -297,26 +278,36 @@ class _StationCardState extends State<StationCard> {
                       : BorderSide.none,
                 ),
               ),
-              onPressed: () {
-                HapticFeedback.mediumImpact();
-                widget.onTrigger(_selectedPort);
-              },
-              icon: Icon(
-                widget.isQueuedHere
-                    ? Icons.hourglass_top_rounded
-                    : (widget.isOnline
-                        ? Icons.bolt_rounded
-                        : Icons.schedule_send_rounded),
-                size: 22,
-              ),
+              onPressed: _isSubmitting ? null : _handleTrigger,
+              icon: _isSubmitting
+                  ? SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.2,
+                        color: widget.isQueuedHere
+                            ? AppColors.amber
+                            : Colors.black,
+                      ),
+                    )
+                  : Icon(
+                      widget.isQueuedHere
+                          ? Icons.hourglass_top_rounded
+                          : (widget.isOnline
+                              ? Icons.bolt_rounded
+                              : Icons.schedule_send_rounded),
+                      size: 22,
+                    ),
               label: Text(
-                widget.isQueuedHere
-                    ? '排队中 (${_socket(widget.queuedPort ?? _selectedPort)}号口) · 点此更新'
-                    : (widget.isOnline
-                        ? (widget.usesPort
-                            ? '选号直达支付 · ${_socket(_selectedPort)}号口'
-                            : '打开充电页 · ${_socket(_selectedPort)}号口')
-                        : '离线排队 · ${_socket(_selectedPort)}号口'),
+                _isSubmitting
+                    ? '正在检测信号...'
+                    : (widget.isQueuedHere
+                        ? '排队中 (${_socket(widget.queuedPort ?? _selectedPort)}号口) · 点此更新'
+                        : (widget.isOnline
+                            ? (widget.usesPort
+                                ? '选号直达支付 · ${_socket(_selectedPort)}号口'
+                                : '打开充电页 · ${_socket(_selectedPort)}号口')
+                            : '离线排队 · ${_socket(_selectedPort)}号口')),
                 style: const TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w800,
@@ -326,6 +317,84 @@ class _StationCardState extends State<StationCard> {
           ),
         ],
       ),
+    );
+  }
+
+  /// 5 列直排网格：比 shrinkWrap GridView 布局测量快一个数量级，零滚动嵌套开销。
+  Widget _buildSocketGrid(Color accentColor) {
+    const columns = 5;
+    final rowCount = (widget.portCount + columns - 1) ~/ columns;
+
+    return Column(
+      children: List.generate(rowCount, (rowIndex) {
+        return Padding(
+          padding: EdgeInsets.only(bottom: rowIndex == rowCount - 1 ? 0 : 8),
+          child: Row(
+            children: List.generate(columns, (colIndex) {
+              final port = rowIndex * columns + colIndex + 1;
+              if (port > widget.portCount) {
+                return const Expanded(child: SizedBox.shrink());
+              }
+              final isSelected = port == _selectedPort;
+              return Expanded(
+                child: Padding(
+                  padding: EdgeInsets.only(
+                    right: colIndex == columns - 1 ? 0 : 8,
+                  ),
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(12),
+                      onTap: () {
+                        HapticFeedback.selectionClick();
+                        setState(() => _selectedPort = port);
+                      },
+                      onLongPress: () {
+                        HapticFeedback.mediumImpact();
+                        setState(() => _selectedPort = port);
+                        widget.onCopyLink(port);
+                      },
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 120),
+                        height: 44,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: isSelected
+                              ? accentColor.withValues(alpha: 0.22)
+                              : AppColors.surfaceElevated,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: isSelected ? accentColor : AppColors.border,
+                            width: isSelected ? 1.8 : 1,
+                          ),
+                          boxShadow: isSelected
+                              ? [
+                                  BoxShadow(
+                                    color: accentColor.withValues(alpha: 0.18),
+                                    blurRadius: 8,
+                                  ),
+                                ]
+                              : null,
+                        ),
+                        child: Text(
+                          _socket(port),
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                            color: isSelected
+                                ? accentColor
+                                : AppColors.textPrimary,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            }),
+          ),
+        );
+      }),
     );
   }
 }

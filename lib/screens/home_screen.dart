@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/charging_station.dart';
 import '../providers/app_providers.dart';
-import '../services/launch_queue_service.dart';
 import '../services/url_rule_engine.dart';
 import '../theme/app_theme.dart';
 import '../widgets/network_diagnostics_sheet.dart';
@@ -19,26 +18,33 @@ class HomeScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    ref.listen<LaunchQueueState>(launchQueueProvider, (prev, next) {
-      final msg = next.statusMessage;
-      if (msg != null && msg != prev?.statusMessage) {
-        ScaffoldMessenger.of(context)
-          ..hideCurrentSnackBar()
-          ..showSnackBar(SnackBar(content: Text(msg)));
-      }
-    });
+    ref.listen<String?>(
+      launchQueueProvider.select((s) => s.statusMessage),
+      (prev, msg) {
+        if (msg != null && msg != prev) {
+          ScaffoldMessenger.of(context)
+            ..hideCurrentSnackBar()
+            ..showSnackBar(SnackBar(content: Text(msg)));
+        }
+      },
+    );
 
     final stations = ref.watch(stationsProvider);
     final settings = ref.watch(settingsProvider);
-    final queueState = ref.watch(launchQueueProvider);
+    final isOnline = ref.watch(launchQueueProvider.select((s) => s.isOnline));
+    final hasPendingTask =
+        ref.watch(launchQueueProvider.select((s) => s.hasPendingTask));
+    final pendingStationId =
+        ref.watch(launchQueueProvider.select((s) => s.pendingStation?.id));
+    final pendingPort =
+        ref.watch(launchQueueProvider.select((s) => s.pendingPort));
 
     return Scaffold(
       body: SafeArea(
         child: Column(
           children: [
-            _buildTopHeader(context, ref, queueState),
-            if (queueState.hasPendingTask)
-              _buildActiveQueueBanner(context, ref, queueState),
+            _buildTopHeader(context, ref),
+            if (hasPendingTask) _buildActiveQueueBanner(context, ref),
             Expanded(
               child: stations.isEmpty
                   ? _buildEmptyState(context)
@@ -48,15 +54,14 @@ class HomeScreen extends ConsumerWidget {
                       separatorBuilder: (_, __) => const SizedBox(height: 14),
                       itemBuilder: (context, index) {
                         final station = stations[index];
-                        final isQueuedHere =
-                            queueState.pendingStation?.id == station.id;
+                        final isQueuedHere = pendingStationId == station.id;
                         return StationCard(
+                          key: ValueKey(station.id),
                           station: station,
                           portCount: settings.defaultPortCount,
-                          isOnline: queueState.isOnline,
+                          isOnline: isOnline,
                           isQueuedHere: isQueuedHere,
-                          queuedPort:
-                              isQueuedHere ? queueState.pendingPort : null,
+                          queuedPort: isQueuedHere ? pendingPort : null,
                           usesPort: UrlRuleEngine.templateUsesPort(
                             station,
                             settings,
@@ -119,9 +124,10 @@ class HomeScreen extends ConsumerWidget {
   Widget _buildTopHeader(
     BuildContext context,
     WidgetRef ref,
-    LaunchQueueState queueState,
   ) {
-    final isOnline = queueState.isOnline;
+    final isOnline = ref.watch(launchQueueProvider.select((s) => s.isOnline));
+    final isChecking =
+        ref.watch(launchQueueProvider.select((s) => s.isChecking));
     final badgeColor = isOnline ? AppColors.emerald : AppColors.amber;
 
     return Padding(
@@ -154,7 +160,7 @@ class HomeScreen extends ConsumerWidget {
                 const SizedBox(height: 2),
                 Text(
                   isOnline
-                      ? '外网已畅通 · 点击即可跳过广告直达'
+                      ? '外网已畅通 · 点击即可直达支付宝选套餐'
                       : '地库无网可用 · 点选插座可先排队',
                   style: const TextStyle(
                     fontSize: 12,
@@ -166,8 +172,10 @@ class HomeScreen extends ConsumerWidget {
           ),
           InkWell(
             borderRadius: BorderRadius.circular(24),
-            onTap: () =>
-                ref.read(launchQueueProvider.notifier).refreshNetworkStatus(),
+            onTap: () {
+              HapticFeedback.selectionClick();
+              ref.read(launchQueueProvider.notifier).refreshNetworkStatus();
+            },
             onLongPress: () => _showNetworkDiagnostics(context, ref),
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -192,7 +200,7 @@ class HomeScreen extends ConsumerWidget {
                   ),
                   const SizedBox(width: 7),
                   Text(
-                    queueState.isChecking
+                    isChecking
                         ? '检测信号中...'
                         : (isOnline ? '网络已就绪' : '地库离线模式'),
                     style: TextStyle(
@@ -227,11 +235,16 @@ class HomeScreen extends ConsumerWidget {
   Widget _buildActiveQueueBanner(
     BuildContext context,
     WidgetRef ref,
-    LaunchQueueState queueState,
   ) {
-    final station = queueState.pendingStation!;
-    final port = queueState.pendingPort!;
-    final isOnline = queueState.isOnline;
+    final station =
+        ref.watch(launchQueueProvider.select((s) => s.pendingStation));
+    final port = ref.watch(launchQueueProvider.select((s) => s.pendingPort));
+    final queuedAt = ref.watch(launchQueueProvider.select((s) => s.queuedAt));
+    final isOnline = ref.watch(launchQueueProvider.select((s) => s.isOnline));
+    final settings = ref.watch(settingsProvider);
+    if (station == null || port == null) return const SizedBox.shrink();
+
+    final displayPort = settings.socketNumber(port);
 
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 4, 16, 8),
@@ -267,7 +280,7 @@ class HomeScreen extends ConsumerWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  '${station.alias} · $port号插座${_formatQueuedElapsed(queueState.queuedAt)}',
+                  '${station.alias} · $displayPort号插座${_formatQueuedElapsed(queuedAt)}',
                   style: const TextStyle(
                     fontSize: 12,
                     color: AppColors.textPrimary,
@@ -278,8 +291,10 @@ class HomeScreen extends ConsumerWidget {
           ),
           if (isOnline)
             TextButton(
-              onPressed: () =>
-                  ref.read(launchQueueProvider.notifier).retryPendingNow(),
+              onPressed: () {
+                HapticFeedback.mediumImpact();
+                ref.read(launchQueueProvider.notifier).retryPendingNow();
+              },
               child: const Text(
                 '立即唤醒',
                 style: TextStyle(
@@ -289,8 +304,10 @@ class HomeScreen extends ConsumerWidget {
               ),
             ),
           TextButton(
-            onPressed: () =>
-                ref.read(launchQueueProvider.notifier).cancelQueue(),
+            onPressed: () {
+              HapticFeedback.selectionClick();
+              ref.read(launchQueueProvider.notifier).cancelQueue();
+            },
             child: const Text(
               '取消排队',
               style: TextStyle(

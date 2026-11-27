@@ -19,6 +19,7 @@ class _QuickSerialModalState extends ConsumerState<QuickSerialModal> {
   String _suffixDigits = '';
   bool _manualMode = false;
   bool _portManuallySelected = false;
+  bool _isSubmitting = false;
   String? _lastSyncedStationId;
   late TextEditingController _manualController;
   int _selectedPort = 1;
@@ -77,6 +78,7 @@ class _QuickSerialModalState extends ConsumerState<QuickSerialModal> {
   }
 
   Future<void> _submit() async {
+    if (_isSubmitting) return;
     HapticFeedback.mediumImpact();
     final settings = ref.read(settingsProvider);
     final rawSn = _currentSerial(settings.quickInputPrefix);
@@ -93,35 +95,42 @@ class _QuickSerialModalState extends ConsumerState<QuickSerialModal> {
       return;
     }
 
-    final stations = ref.read(stationsProvider);
-    final existing =
-        stations.where((s) => s.serialNumber == finalSn).firstOrNull;
+    setState(() => _isSubmitting = true);
+    try {
+      final stations = ref.read(stationsProvider);
+      final existing =
+          stations.where((s) => s.serialNumber == finalSn).firstOrNull;
 
-    final station = existing ??
-        await ref.read(stationsProvider.notifier).upsertStation(
-              alias: '车库桩 ${finalSn.substring(finalSn.length - 4)}',
-              serialNumber: finalSn,
-              rawUrl: UrlRuleEngine.previewUrl(
-                AppSettings.defaultFallbackRawUrlTemplate,
-                sampleSn: finalSn,
-                samplePort: _selectedPort,
-              ),
-              lastUsedPort: _selectedPort,
-            );
+      final station = existing ??
+          await ref.read(stationsProvider.notifier).upsertStation(
+                alias: '车库桩 ${finalSn.substring(finalSn.length - 4)}',
+                serialNumber: finalSn,
+                rawUrl: UrlRuleEngine.previewUrl(
+                  AppSettings.defaultFallbackRawUrlTemplate,
+                  sampleSn: finalSn,
+                  samplePort: _selectedPort,
+                ),
+                lastUsedPort: _selectedPort,
+              );
 
-    final outcome = await ref
-        .read(launchQueueProvider.notifier)
-        .triggerOrQueue(station, _selectedPort);
+      final outcome = await ref
+          .read(launchQueueProvider.notifier)
+          .triggerOrQueue(station, _selectedPort);
 
-    if (!mounted) return;
-    Navigator.of(context).pop(outcome);
+      if (!mounted) return;
+      Navigator.of(context).pop(outcome);
+    } finally {
+      if (mounted) {
+        setState(() => _isSubmitting = false);
+      }
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final settings = ref.watch(settingsProvider);
     final stations = ref.watch(stationsProvider);
-    final queueState = ref.watch(launchQueueProvider);
+    final isOnline = ref.watch(launchQueueProvider.select((s) => s.isOnline));
 
     final prefix = settings.quickInputPrefix;
     final serial = _currentSerial(prefix);
@@ -304,52 +313,7 @@ class _QuickSerialModalState extends ConsumerState<QuickSerialModal> {
                 ),
               ),
               const SizedBox(height: 8),
-              SizedBox(
-                height: 44,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: settings.defaultPortCount,
-                  separatorBuilder: (_, __) => const SizedBox(width: 8),
-                  itemBuilder: (context, index) {
-                    final port = index + 1;
-                    final selected = port == _selectedPort;
-                    return InkWell(
-                      borderRadius: BorderRadius.circular(10),
-                      onTap: () {
-                        HapticFeedback.selectionClick();
-                        setState(() {
-                          _selectedPort = port;
-                          _portManuallySelected = true;
-                        });
-                      },
-                      child: Container(
-                        width: 44,
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          color: selected
-                              ? AppColors.cyan.withValues(alpha: 0.2)
-                              : AppColors.surfaceElevated,
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(
-                            color: selected ? AppColors.cyan : AppColors.border,
-                            width: selected ? 1.6 : 1,
-                          ),
-                        ),
-                        child: Text(
-                          '${settings.socketNumber(port)}',
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w800,
-                            color: selected
-                                ? AppColors.cyan
-                                : AppColors.textPrimary,
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
+              _buildSocketGrid(settings),
               if (!_manualMode) ...[
                 const SizedBox(height: 16),
                 _buildKeypad(prefix),
@@ -359,24 +323,34 @@ class _QuickSerialModalState extends ConsumerState<QuickSerialModal> {
                 height: 54,
                 child: ElevatedButton.icon(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: queueState.isOnline
-                        ? AppColors.emerald
-                        : AppColors.amber,
+                    backgroundColor:
+                        isOnline ? AppColors.emerald : AppColors.amber,
                     foregroundColor: Colors.black,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(14),
                     ),
                   ),
-                  onPressed: isReady ? _submit : null,
-                  icon: Icon(
-                    queueState.isOnline
-                        ? Icons.bolt_rounded
-                        : Icons.schedule_send_rounded,
-                  ),
+                  onPressed: (isReady && !_isSubmitting) ? _submit : null,
+                  icon: _isSubmitting
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2.2,
+                            color: Colors.black,
+                          ),
+                        )
+                      : Icon(
+                          isOnline
+                              ? Icons.bolt_rounded
+                              : Icons.schedule_send_rounded,
+                        ),
                   label: Text(
-                    queueState.isOnline
-                        ? '立即直达 · ${settings.socketNumber(_selectedPort)}号口'
-                        : '加入离线排队 · ${settings.socketNumber(_selectedPort)}号口',
+                    _isSubmitting
+                        ? '正在检测信号...'
+                        : (isOnline
+                            ? '立即直达 · ${settings.socketNumber(_selectedPort)}号口'
+                            : '加入离线排队 · ${settings.socketNumber(_selectedPort)}号口'),
                     style: const TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w800,
@@ -388,6 +362,70 @@ class _QuickSerialModalState extends ConsumerState<QuickSerialModal> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildSocketGrid(AppSettings settings) {
+    const columns = 5;
+    final portCount = settings.defaultPortCount;
+    final rowCount = (portCount + columns - 1) ~/ columns;
+
+    return Column(
+      children: List.generate(rowCount, (rowIndex) {
+        return Padding(
+          padding: EdgeInsets.only(bottom: rowIndex == rowCount - 1 ? 0 : 8),
+          child: Row(
+            children: List.generate(columns, (colIndex) {
+              final port = rowIndex * columns + colIndex + 1;
+              if (port > portCount) {
+                return const Expanded(child: SizedBox.shrink());
+              }
+              final selected = port == _selectedPort;
+              return Expanded(
+                child: Padding(
+                  padding: EdgeInsets.only(
+                    right: colIndex == columns - 1 ? 0 : 8,
+                  ),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(10),
+                    onTap: () {
+                      HapticFeedback.selectionClick();
+                      setState(() {
+                        _selectedPort = port;
+                        _portManuallySelected = true;
+                      });
+                    },
+                    child: Container(
+                      height: 40,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: selected
+                            ? AppColors.cyan.withValues(alpha: 0.2)
+                            : AppColors.surfaceElevated,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: selected ? AppColors.cyan : AppColors.border,
+                          width: selected ? 1.6 : 1,
+                        ),
+                      ),
+                      child: Text(
+                        '${settings.socketNumber(port)}',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                          color: selected
+                              ? AppColors.cyan
+                              : AppColors.textPrimary,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            }),
+          ),
+        );
+      }),
     );
   }
 

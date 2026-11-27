@@ -47,9 +47,10 @@ class _OfflineScannerScreenState extends ConsumerState<OfflineScannerScreen> {
     _textRecognizer = TextRecognizer(script: TextRecognitionScript.latin);
   }
 
-  MobileScannerController _buildController() => MobileScannerController(
+  MobileScannerController _buildController({ScannerMode? forMode}) =>
+      MobileScannerController(
         detectionSpeed: DetectionSpeed.normal,
-        returnImage: true,
+        returnImage: (forMode ?? _mode) == ScannerMode.ocr,
       );
 
   /// 相机启动失败（ML Kit/相机被占用等）时可一键重建控制器重试。
@@ -83,10 +84,18 @@ class _OfflineScannerScreenState extends ConsumerState<OfflineScannerScreen> {
     }
   }
 
-  void _switchMode(ScannerMode next) {
+  Future<void> _switchMode(ScannerMode next) async {
+    if (_mode == next) return;
     HapticFeedback.selectionClick();
+    _latestFrameBytes = null;
+    try {
+      await _scannerController.dispose();
+    } catch (_) {}
+    if (!mounted) return;
     setState(() {
       _mode = next;
+      _scannerController = _buildController(forMode: next);
+      _cameraGeneration++;
       _hintText = next == ScannerMode.qr
           ? '对准充电桩二维码，断网即可瞬间识别（反光/小码可点右上角 2x 变焦）'
           : '对准设备上印刷的桩号（如 W52001715），暗光可点右上角手电筒';
@@ -95,10 +104,6 @@ class _OfflineScannerScreenState extends ConsumerState<OfflineScannerScreen> {
 
   void _onDetect(BarcodeCapture capture) {
     if (_isConfirming) return;
-
-    if (capture.image != null) {
-      _latestFrameBytes = capture.image;
-    }
 
     if (_mode == ScannerMode.qr) {
       for (final barcode in capture.barcodes) {
@@ -109,6 +114,7 @@ class _OfflineScannerScreenState extends ConsumerState<OfflineScannerScreen> {
         }
       }
     } else if (_mode == ScannerMode.ocr && capture.image != null) {
+      _latestFrameBytes = capture.image;
       final now = DateTime.now();
       if (!_isRunningOcr &&
           now.difference(_lastOcrRun) >= const Duration(milliseconds: 900)) {
