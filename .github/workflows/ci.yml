@@ -89,11 +89,11 @@ jobs:
           EOF
           echo "签名配置已写入（密钥来自 GitHub Secrets，不进仓库）"
 
-      - name: Build Android Release APK
-        run: flutter build apk --release
+      - name: Build Android Release APK (per ABI)
+        run: flutter build apk --release --split-per-abi
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: zapslot-release-apk
-          path: build/app/outputs/flutter-apk/app-release.apk
+          path: build/app/outputs/flutter-apk/*.apk
