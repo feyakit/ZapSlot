@@ -26,7 +26,7 @@ class MainActivity : FlutterActivity() {
                         result.success(true)
                     }
                     "armSkipWindow" -> {
-                        val durationMs = (call.argument<Number>("durationMs")?.toLong() ?: 6000L)
+                        val durationMs = (call.argument<Number>("durationMs")?.toLong() ?: 10000L)
                             .coerceIn(1000L, 15000L)
                         AlipayAdSkipService.armWindow(durationMs)
                         result.success(true)

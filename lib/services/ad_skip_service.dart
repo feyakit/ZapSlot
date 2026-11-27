@@ -32,8 +32,8 @@ class AdSkipService {
     } catch (_) {}
   }
 
-  /// 在拉起 `alipays://` 前开启短暂窗口（默认 6 秒），期间检测到支付宝开屏「跳过」即自动点击。
-  static Future<void> armForAlipayLaunch({int durationMs = 6000}) async {
+  /// 在拉起 `alipays://` 前开启短暂窗口（默认 10 秒），期间检测到支付宝/小程序开屏广告即自动跳过。
+  static Future<void> armForAlipayLaunch({int durationMs = 10000}) async {
     if (!isSupported) return;
     try {
       await _channel.invokeMethod<void>(
