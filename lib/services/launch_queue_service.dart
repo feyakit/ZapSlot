@@ -9,6 +9,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../models/app_settings.dart';
 import '../models/charging_station.dart';
+import 'ad_skip_service.dart';
 import 'background_queue_worker.dart';
 import 'notification_service.dart';
 import 'storage_service.dart';
@@ -556,6 +557,9 @@ class LaunchQueueNotifier extends StateNotifier<LaunchQueueState> {
     try {
       if (_launchUriOverride != null) {
         return await _launchUriOverride(uri);
+      }
+      if (uri.scheme.toLowerCase() == 'alipays') {
+        await AdSkipService.armForAlipayLaunch();
       }
       return await launchUrl(
         uri,

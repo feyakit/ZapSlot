@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="alipay_ad_skip_service_label">闪雀 · 跳过支付宝开屏广告</string>
+    <string name="alipay_ad_skip_service_description">仅在从「闪雀」直达支付宝后的 6 秒内，自动点击支付宝小程序开屏的「跳过」按钮。平时休眠零耗电，不监听其他应用、不读取或上传任何隐私信息。</string>
+</resources>
