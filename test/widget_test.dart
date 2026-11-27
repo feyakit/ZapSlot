@@ -128,7 +128,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('选号直达支付 · 0号口'), findsOneWidget);
-    expect(find.text('外网已畅通 · 点卡展开选口'), findsOneWidget);
+    expect(find.text('闪雀就绪 · 点桩展开选口'), findsOneWidget);
     expect(find.text('选号直达支付 · 1号口'), findsNothing);
 
     // 点击第二张折叠卡：自动展开第二张并自动闭合第一张
@@ -181,12 +181,24 @@ void main() {
     expect(find.text('莱充小程序 · 直达选插座页（查看空闲口）'), findsOneWidget);
   });
 
-  testWidgets('tapping station card title opens quick rename dialog and saves alias',
+  testWidgets('tapping title toggles card and 3-dot menu opens rename dialog',
       (tester) async {
     await tester.pumpWidget(buildTestApp(isOnline: true));
     await tester.pumpAndSettle();
 
+    // 点名称区域收起卡片，再点展开
     await tester.tap(find.text('B2-A区 1号桩'));
+    await tester.pumpAndSettle();
+    expect(find.text('选号直达支付 · 0号口'), findsNothing);
+
+    await tester.tap(find.text('B2-A区 1号桩'));
+    await tester.pumpAndSettle();
+    expect(find.text('选号直达支付 · 0号口'), findsOneWidget);
+
+    // 点三个点菜单 -> 修改名称
+    await tester.tap(find.byIcon(Icons.more_horiz_rounded));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('修改名称'));
     await tester.pumpAndSettle();
 
     expect(find.text('修改名称 · W52001715'), findsOneWidget);
@@ -210,7 +222,7 @@ void main() {
     await tester.tap(find.text('5 小时后提醒'));
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('0号口」拔枪'), findsOneWidget);
+    expect(find.textContaining('0号口」拔电'), findsOneWidget);
   });
 
   testWidgets('footprint tab shows local charging footprint and mini-program button',

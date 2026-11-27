@@ -12,13 +12,17 @@ import 'app_providers.dart';
 /// - 支持按小时倒计时兜底（前台 Timer + 后台 WorkManager）
 /// - 支持同步监测目标插口状态：一旦从「充电中」转为「空闲中」，立刻推送结束通知
 class ChargingReminderNotifier extends StateNotifier<ChargingReminderRecord?> {
-  ChargingReminderNotifier(this._storage, this._notifications)
-      : super(_storage.loadChargingReminder()) {
+  ChargingReminderNotifier(
+    this._storage,
+    this._notifications, {
+    this.onCompleted,
+  }) : super(_storage.loadChargingReminder()) {
     _syncTimer();
   }
 
   final StorageService _storage;
   final NotificationService _notifications;
+  final void Function(String stationId, String portLabel)? onCompleted;
   Timer? _timer;
   bool _sawBusyOnWatchedSlot = false;
 
@@ -42,6 +46,9 @@ class ChargingReminderNotifier extends StateNotifier<ChargingReminderRecord?> {
       stationName: record.stationName,
       portLabel: record.portLabel,
     );
+    if (record.watchStationId != null) {
+      onCompleted?.call(record.watchStationId!, record.portLabel);
+    }
     await clearReminder();
   }
 
@@ -104,10 +111,24 @@ class ChargingReminderNotifier extends StateNotifier<ChargingReminderRecord?> {
   }
 }
 
+/// 刚刚充满待拔电的充电桩映射（stationId -> socketLabel），用于卡片显示「满电结束」视觉效果。
+final recentlyCompletedStationsProvider =
+    StateProvider<Map<String, String>>((ref) => const {});
+
 final chargingReminderProvider =
     StateNotifierProvider<ChargingReminderNotifier, ChargingReminderRecord?>(
         (ref) {
   final storage = ref.watch(storageServiceProvider);
   final notifications = ref.watch(notificationServiceProvider);
-  return ChargingReminderNotifier(storage, notifications);
+  return ChargingReminderNotifier(
+    storage,
+    notifications,
+    onCompleted: (stationId, portLabel) {
+      final current = ref.read(recentlyCompletedStationsProvider);
+      ref.read(recentlyCompletedStationsProvider.notifier).state = {
+        ...current,
+        stationId: portLabel,
+      };
+    },
+  );
 });

@@ -26,6 +26,19 @@
 	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>用于离线扫描地下车库充电桩二维码及识别设备上印刷的桩号编码</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>用于从相册选取充电桩二维码或编号照片进行离线识别</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSExceptionDomains</key>
+		<dict>
+			<key>weixin.weiyunchong.com</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+			</dict>
+		</dict>
+	</dict>
 	<key>LSApplicationQueriesSchemes</key>
 	<array>
 		<string>weixin</string>

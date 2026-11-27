@@ -27,6 +27,9 @@ class StationCard extends StatefulWidget {
     this.isRefreshing = false,
     this.isFirst = false,
     this.isExpanded = true,
+    this.watchingPortLabel,
+    this.completedPortLabel,
+    this.onDismissCompleted,
     this.onToggleExpand,
     this.onRefreshLive,
     this.onPinToTop,
@@ -50,6 +53,9 @@ class StationCard extends StatefulWidget {
   final bool isRefreshing;
   final bool isFirst;
   final bool isExpanded;
+  final String? watchingPortLabel;
+  final String? completedPortLabel;
+  final VoidCallback? onDismissCompleted;
   final VoidCallback? onToggleExpand;
   final VoidCallback? onRefreshLive;
   final VoidCallback? onPinToTop;
@@ -60,17 +66,58 @@ class StationCard extends StatefulWidget {
   State<StationCard> createState() => _StationCardState();
 }
 
-class _StationCardState extends State<StationCard> {
+class _StationCardState extends State<StationCard>
+    with SingleTickerProviderStateMixin {
   late int _selectedPort;
   bool _isSubmitting = false;
+  String? _localCompletedPortLabel;
+  late final AnimationController _chargeAnimController;
 
   String _socket(int port) =>
       widget.station.socketLabel(port, widget.portIndexBase);
+
+  String? get _effectiveCompletedPort =>
+      widget.completedPortLabel ?? _localCompletedPortLabel;
+
+  bool get _isCompleted => _effectiveCompletedPort != null;
+
+  bool get _isChargingActive {
+    if (_isCompleted) return false;
+    if (widget.watchingPortLabel != null) return true;
+    final live = widget.liveInfo;
+    return live != null && !live.isDeviceOffline && live.busyCount > 0;
+  }
+
+  void _dismissCompleted() {
+    if (_localCompletedPortLabel != null) {
+      setState(() => _localCompletedPortLabel = null);
+    }
+    widget.onDismissCompleted?.call();
+  }
+
+  void _syncChargeAnimation() {
+    final shouldAnimate = !widget.isExpanded && _isChargingActive;
+    if (shouldAnimate) {
+      if (!_chargeAnimController.isAnimating) {
+        _chargeAnimController.repeat();
+      }
+    } else {
+      if (_chargeAnimController.isAnimating) {
+        _chargeAnimController.stop();
+        _chargeAnimController.value = 0;
+      }
+    }
+  }
 
   @override
   void initState() {
     super.initState();
     _selectedPort = widget.station.lastUsedPort.clamp(1, widget.portCount);
+    _chargeAnimController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1900),
+    );
+    _syncChargeAnimation();
   }
 
   @override
@@ -80,6 +127,21 @@ class _StationCardState extends State<StationCard> {
         oldWidget.portCount != widget.portCount) {
       _selectedPort = widget.station.lastUsedPort.clamp(1, widget.portCount);
     }
+    final oldStatus = oldWidget.liveInfo?.gunStatuses[_selectedPort];
+    final newStatus = widget.liveInfo?.gunStatuses[_selectedPort];
+    if (oldStatus == GunWorkStatus.busy && newStatus == GunWorkStatus.idle) {
+      _localCompletedPortLabel = _socket(_selectedPort);
+    } else if (newStatus == GunWorkStatus.busy &&
+        _localCompletedPortLabel == _socket(_selectedPort)) {
+      _localCompletedPortLabel = null;
+    }
+    _syncChargeAnimation();
+  }
+
+  @override
+  void dispose() {
+    _chargeAnimController.dispose();
+    super.dispose();
   }
 
   Future<void> _handleTrigger() async {
@@ -157,7 +219,9 @@ class _StationCardState extends State<StationCard> {
 
     return ZapGlassCard(
       borderRadius: 24,
-      borderColor: widget.isQueuedHere ? p.offline : p.glassBorder,
+      borderColor: widget.isQueuedHere
+          ? p.offline
+          : (_isCompleted ? p.idle.withValues(alpha: 0.72) : p.glassBorder),
       padding: EdgeInsets.fromLTRB(
         16,
         14,
@@ -176,50 +240,232 @@ class _StationCardState extends State<StationCard> {
   }
 
   Widget _buildCollapsedBody(ZapPalette p, StationLiveInfo? live) {
+    final isCompleted = _isCompleted;
+    final completedPort = _effectiveCompletedPort;
+    final isCharging = _isChargingActive;
+    final busyCount = live?.busyCount ?? 0;
+    final chargingLabel = widget.watchingPortLabel != null
+        ? '${widget.watchingPortLabel}号口正在充电'
+        : '$busyCount个口正在充电';
+    final completedLabel = (completedPort != null && completedPort.isNotEmpty)
+        ? '$completedPort号口已充满 · 记得下楼拔电'
+        : '已充满 · 记得下楼拔电';
+
     return InkWell(
       borderRadius: BorderRadius.circular(18),
       onTap: () {
         HapticFeedback.selectionClick();
         widget.onToggleExpand?.call();
       },
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  widget.station.alias,
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w800,
-                    color: p.textPrimary,
-                    letterSpacing: 0.1,
+          Row(
+            children: [
+              if (isCompleted) ...[
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: p.idle.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: p.idle.withValues(alpha: 0.65),
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: p.idle.withValues(alpha: 0.28),
+                        blurRadius: 12,
+                      ),
+                    ],
                   ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                  child: Icon(
+                    Icons.check_circle_rounded,
+                    size: 21,
+                    color: p.idle,
+                  ),
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  '${widget.station.serialNumber} · 上次 ${_socket(widget.station.lastUsedPort)}号口 · ${_formatRelativeTime(widget.station.lastUsedDate)}',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: p.textSecondary,
+                const SizedBox(width: 10),
+              ] else if (isCharging) ...[
+                AnimatedBuilder(
+                  animation: _chargeAnimController,
+                  builder: (context, child) {
+                    final v = _chargeAnimController.value;
+                    final pulse = 0.5 + 0.5 * (v < 0.5 ? v * 2 : (1 - v) * 2);
+                    return Container(
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(
+                        color: p.idle.withValues(alpha: 0.14 + pulse * 0.12),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: p.idle.withValues(alpha: 0.35 + pulse * 0.35),
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: p.idle.withValues(alpha: 0.16 + pulse * 0.22),
+                            blurRadius: 8 + pulse * 6,
+                          ),
+                        ],
+                      ),
+                      child: Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          Icon(
+                            Icons.electric_moped_rounded,
+                            size: 20,
+                            color: p.idle,
+                          ),
+                          Positioned(
+                            top: 3,
+                            right: 3,
+                            child: Transform.scale(
+                              scale: 0.85 + pulse * 0.28,
+                              child: Icon(
+                                Icons.bolt_rounded,
+                                size: 11,
+                                color: p.primary,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+                const SizedBox(width: 10),
+              ],
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      widget.station.alias,
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                        color: p.textPrimary,
+                        letterSpacing: 0.1,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      isCompleted
+                          ? '${widget.station.serialNumber} · $completedLabel'
+                          : (isCharging
+                              ? '${widget.station.serialNumber} · $chargingLabel'
+                              : '${widget.station.serialNumber} · 上次 ${_socket(widget.station.lastUsedPort)}号口 · ${_formatRelativeTime(widget.station.lastUsedDate)}'),
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: (isCompleted || isCharging)
+                            ? FontWeight.w700
+                            : FontWeight.w400,
+                        color: (isCompleted || isCharging)
+                            ? p.idle
+                            : p.textSecondary,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+              if (isCompleted)
+                InkWell(
+                  borderRadius: BorderRadius.circular(10),
+                  onTap: () {
+                    HapticFeedback.selectionClick();
+                    _dismissCompleted();
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 9,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: p.idle.withValues(alpha: 0.18),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: p.idle.withValues(alpha: 0.45),
+                      ),
+                    ),
+                    child: Text(
+                      '已拔电',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        color: p.idle,
+                      ),
+                    ),
                   ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                )
+              else if (live != null &&
+                  (live.isDeviceOffline || live.totalCount > 0))
+                _buildIdleBadge(p, live),
+              if (widget.onToggleExpand != null) ...[
+                const SizedBox(width: 6),
+                Icon(
+                  Icons.keyboard_arrow_down_rounded,
+                  size: 22,
+                  color: p.textSecondary,
                 ),
               ],
-            ),
+            ],
           ),
-          if (live != null && (live.isDeviceOffline || live.totalCount > 0))
-            _buildIdleBadge(p, live),
-          if (widget.onToggleExpand != null) ...[
-            const SizedBox(width: 6),
-            Icon(
-              Icons.keyboard_arrow_down_rounded,
-              size: 22,
-              color: p.textSecondary,
+          if (isCompleted) ...[
+            const SizedBox(height: 10),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: Container(
+                height: 4,
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [p.idle, p.primary],
+                  ),
+                ),
+              ),
+            ),
+          ] else if (isCharging) ...[
+            const SizedBox(height: 10),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: SizedBox(
+                height: 4,
+                width: double.infinity,
+                child: AnimatedBuilder(
+                  animation: _chargeAnimController,
+                  builder: (context, _) {
+                    final sweep = _chargeAnimController.value * 2.4 - 1.2;
+                    return DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: p.idle.withValues(alpha: 0.15),
+                      ),
+                      child: FractionallySizedBox(
+                        alignment: Alignment(sweep, 0),
+                        widthFactor: 0.45,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(4),
+                            gradient: LinearGradient(
+                              colors: [
+                                p.idle.withValues(alpha: 0.0),
+                                p.idle,
+                                p.primary,
+                                Colors.white.withValues(alpha: 0.9),
+                                p.primary.withValues(alpha: 0.0),
+                              ],
+                              stops: const [0.0, 0.45, 0.78, 0.92, 1.0],
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
             ),
           ],
         ],
@@ -236,17 +482,17 @@ class _StationCardState extends State<StationCard> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // 第 1 行：桩标题 + 空闲胶囊 + 折叠/菜单
+        // 第 1 行：点击名称区域可收起卡片 + 空闲胶囊 + 菜单
         Row(
           children: [
             Expanded(
               child: InkWell(
-                borderRadius: BorderRadius.circular(8),
-                onTap: widget.onRename == null
+                borderRadius: BorderRadius.circular(10),
+                onTap: widget.onToggleExpand == null
                     ? null
                     : () {
                         HapticFeedback.selectionClick();
-                        widget.onRename!();
+                        widget.onToggleExpand!();
                       },
                 child: Padding(
                   padding: const EdgeInsets.symmetric(vertical: 2),
@@ -265,12 +511,12 @@ class _StationCardState extends State<StationCard> {
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                      if (widget.onRename != null) ...[
-                        const SizedBox(width: 5),
+                      if (widget.onToggleExpand != null) ...[
+                        const SizedBox(width: 4),
                         Icon(
-                          Icons.edit_rounded,
-                          size: 14,
+                          Icons.keyboard_arrow_up_rounded,
                           color: p.textSecondary,
+                          size: 20,
                         ),
                       ],
                     ],
@@ -300,22 +546,6 @@ class _StationCardState extends State<StationCard> {
                   ),
                 ),
               ),
-            if (widget.onToggleExpand != null)
-              InkWell(
-                borderRadius: BorderRadius.circular(14),
-                onTap: () {
-                  HapticFeedback.selectionClick();
-                  widget.onToggleExpand!();
-                },
-                child: Padding(
-                  padding: const EdgeInsets.all(4),
-                  child: Icon(
-                    Icons.keyboard_arrow_up_rounded,
-                    color: p.textSecondary,
-                    size: 20,
-                  ),
-                ),
-              ),
             SizedBox(
               width: 32,
               height: 32,
@@ -330,6 +560,8 @@ class _StationCardState extends State<StationCard> {
                 onSelected: (value) {
                   if (value == 'pin') {
                     widget.onPinToTop?.call();
+                  } else if (value == 'rename') {
+                    widget.onRename?.call();
                   } else if (value == 'reminder') {
                     widget.onScheduleReminder?.call(_selectedPort);
                   } else if (value == 'mini_program') {
@@ -352,13 +584,22 @@ class _StationCardState extends State<StationCard> {
                         label: '置顶此充电桩',
                       ),
                     ),
+                  if (widget.onRename != null)
+                    PopupMenuItem(
+                      value: 'rename',
+                      child: _buildMenuRow(
+                        icon: Icons.drive_file_rename_outline_rounded,
+                        color: p.primary,
+                        label: '修改名称',
+                      ),
+                    ),
                   if (widget.onScheduleReminder != null)
                     PopupMenuItem(
                       value: 'reminder',
                       child: _buildMenuRow(
                         icon: Icons.alarm_add_rounded,
                         color: p.primary,
-                        label: '设置取车 / 结束提醒',
+                        label: '设置拔电 / 充完提醒',
                       ),
                     ),
                   if (widget.onOpenMiniProgram != null)
@@ -452,6 +693,57 @@ class _StationCardState extends State<StationCard> {
           ],
         ),
         const SizedBox(height: 12),
+        if (_isCompleted) ...[
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: p.idle.withValues(alpha: 0.14),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: p.idle.withValues(alpha: 0.45)),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.check_circle_rounded, size: 18, color: p.idle),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    '${_effectiveCompletedPort!.isNotEmpty ? '${_effectiveCompletedPort!}号口' : ''}已充满 · 记得下楼拔电',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w800,
+                      color: p.idle,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                InkWell(
+                  borderRadius: BorderRadius.circular(8),
+                  onTap: () {
+                    HapticFeedback.selectionClick();
+                    _dismissCompleted();
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
+                    child: Text(
+                      '已拔电',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        color: p.textPrimary,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+        ],
         // 核心区：5×2 透明玻璃插口格
         _buildSocketGrid(p),
         const SizedBox(height: 10),

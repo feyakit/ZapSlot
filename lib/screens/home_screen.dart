@@ -92,7 +92,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       backgroundColor: p.offline,
                       smallSize: 7,
                       child: Icon(
-                        Icons.ev_station_rounded,
+                        Icons.electric_moped_rounded,
                         color: p.textSecondary,
                       ),
                     ),
@@ -101,7 +101,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       backgroundColor: p.offline,
                       smallSize: 7,
                       child: Icon(
-                        Icons.ev_station_rounded,
+                        Icons.electric_moped_rounded,
                         color: p.primary,
                       ),
                     ),
@@ -209,6 +209,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                             (s) => s.refreshingIds.contains(station.id),
                           ),
                         );
+                        final completedPortLabel = ref.watch(
+                          recentlyCompletedStationsProvider
+                              .select((m) => m[station.id]),
+                        );
                         return StationCard(
                           key: ValueKey(station.id),
                           station: station,
@@ -226,6 +230,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                           isRefreshing: isRefreshing,
                           isFirst: index == 0,
                           isExpanded: station.id == _expandedStationId,
+                          watchingPortLabel:
+                              reminder?.watchStationId == station.id
+                                  ? reminder!.portLabel
+                                  : null,
+                          completedPortLabel: completedPortLabel,
+                          onDismissCompleted: () {
+                            final next = Map<String, String>.from(
+                              ref.read(recentlyCompletedStationsProvider),
+                            )..remove(station.id);
+                            ref
+                                .read(recentlyCompletedStationsProvider.notifier)
+                                .state = next;
+                          },
                           onToggleExpand: () {
                             setState(() {
                               _expandedStationId =
@@ -388,7 +405,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 ),
                 const SizedBox(height: 1),
                 Text(
-                  isOnline ? '外网已畅通 · 点卡展开选口' : '地库无网可用 · 点选插座可先排队',
+                  isOnline ? '闪雀就绪 · 点桩展开选口' : '地库无网 · 选好插口先排队',
                   style: TextStyle(
                     fontSize: 11.5,
                     color: p.textSecondary,
@@ -580,13 +597,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
-                Icons.ev_station_rounded,
+                Icons.electric_moped_rounded,
                 size: 56,
                 color: p.primary,
               ),
               const SizedBox(height: 14),
               Text(
-                '还没有保存的充电桩',
+                '还没有常停的电驴桩',
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.w800,
@@ -595,7 +612,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               ),
               const SizedBox(height: 6),
               Text(
-                '点击上方“离线扫新桩”或“输编号直达”即可开始使用',
+                '扫一下车棚桩二维码或输尾号，闪雀帮你记住常用插口',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: p.textSecondary),
               ),
@@ -810,7 +827,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             const SizedBox(width: 8),
             Expanded(
               child: Text(
-                '将于 $hh:$mm 提醒去「${reminder.stationName}$portText」拔枪${isWatching ? '（充完提前提醒）' : ''}',
+                '将于 $hh:$mm 提醒去「${reminder.stationName}$portText」拔电${isWatching ? '（充完提前提醒）' : ''}',
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w700,
@@ -858,7 +875,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
-                '设置取车拔枪提醒 · ${station.alias} ($portLabel号口)',
+                '设置电驴拔电提醒 · ${station.alias} ($portLabel号口)',
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w800,
@@ -867,7 +884,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               ),
               const SizedBox(height: 4),
               Text(
-                '到点自动弹通知；若轮询检测到该口提前充完转空闲，也会立刻提醒你',
+                '到点自动提醒；若检测到该口提前充完转空闲，闪雀也会第一时间叫你拔电',
                 style: TextStyle(
                   fontSize: 12,
                   color: p.textSecondary,
@@ -923,7 +940,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(
-        SnackBar(content: Text('已设置 $hours 小时后提醒去「${station.alias}」拔枪')),
+        SnackBar(content: Text('已设置 $hours 小时后提醒去「${station.alias}」拔电')),
       );
   }
 

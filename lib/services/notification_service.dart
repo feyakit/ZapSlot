@@ -129,7 +129,7 @@ class NotificationService {
       channelDescription: channelDescription,
       importance: Importance.max,
       priority: Priority.max,
-      ticker: '充电定时提醒：该去拔枪挪车啦',
+      ticker: '闪雀提醒：小电驴该拔电啦',
       category: AndroidNotificationCategory.alarm,
       autoCancel: true,
     );
@@ -148,8 +148,8 @@ class NotificationService {
     final suffix = portLabel.isEmpty ? '' : ' · $portLabel号口';
     await _plugin.show(
       _reminderNotificationId,
-      '取车拔枪提醒：$stationName',
-      '充电定时已到$suffix，记得去拔枪挪车',
+      '闪雀拔电提醒：$stationName',
+      '充电定时已到$suffix，记得下楼给电驴拔电',
       details,
     );
   }

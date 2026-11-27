@@ -129,7 +129,7 @@ class _FootprintTabState extends ConsumerState<FootprintTab> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    '将于 ${reminder.remindAt.hour.toString().padLeft(2, '0')}:${reminder.remindAt.minute.toString().padLeft(2, '0')} 提醒拔枪',
+                                    '将于 ${reminder.remindAt.hour.toString().padLeft(2, '0')}:${reminder.remindAt.minute.toString().padLeft(2, '0')} 提醒拔电',
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: TextStyle(
@@ -165,7 +165,7 @@ class _FootprintTabState extends ConsumerState<FootprintTab> {
                                     .clearReminder();
                               },
                               child: Text(
-                                '我已拔枪',
+                                '我已拔电',
                                 style: TextStyle(
                                   fontSize: 12,
                                   fontWeight: FontWeight.w700,
@@ -185,7 +185,7 @@ class _FootprintTabState extends ConsumerState<FootprintTab> {
                             const SizedBox(width: 10),
                             Expanded(
                               child: Text(
-                                '暂无拔枪提醒 · 在充电页卡片右下角点闹钟即可设置定时或充完自动提醒',
+                                '暂无拔电提醒 · 在充电页点闹钟，到点或充完闪雀自动叫你',
                                 maxLines: 2,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
@@ -267,106 +267,124 @@ class _FootprintTabState extends ConsumerState<FootprintTab> {
                 ),
                 const SizedBox(height: 8),
                 if (recentItems.isEmpty)
-                  ZapGlassCard(
-                    borderRadius: 20,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 32,
-                    ),
-                    child: Center(
-                      child: Text(
-                        '暂无直达记录 · 每次点选插口去充电会自动记录在这里并生成统计分析',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: p.textSecondary,
+                  SizedBox(
+                    width: double.infinity,
+                    child: ZapGlassCard(
+                      borderRadius: 22,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 32,
+                      ),
+                      child: Center(
+                        child: Text(
+                          '暂无直达记录 · 每次点选插口去充电会自动记录在这里并生成统计分析',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: p.textSecondary,
+                          ),
                         ),
                       ),
                     ),
                   )
                 else
-                  ZapGlassCard(
-                    borderRadius: 20,
-                    child: ListView.separated(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      itemCount: recentItems.length,
-                      separatorBuilder: (_, __) => const Divider(height: 1),
-                      itemBuilder: (_, idx) {
-                        final item = recentItems[idx];
-                        final dt = item.triggeredAt;
-                        final timeStr =
-                            '${dt.month}/${dt.day} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
-                        final hasAmount =
-                            item.amountYuan != null && item.amountYuan! > 0;
-                        return ListTile(
-                          onTap: () => _showAmountPickerSheet(
-                            context,
-                            ref,
-                            index: idx,
-                            record: item,
-                            initialPresets: commonAmounts,
-                          ),
-                          leading: Container(
-                            width: 36,
-                            height: 36,
-                            decoration: BoxDecoration(
-                              color: p.primary.withValues(alpha: 0.14),
-                              borderRadius: BorderRadius.circular(10),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ZapGlassCard(
+                      borderRadius: 22,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          for (var idx = 0; idx < recentItems.length; idx++) ...[
+                            if (idx > 0) const Divider(height: 1),
+                            Builder(
+                              builder: (_) {
+                                final item = recentItems[idx];
+                                final dt = item.triggeredAt;
+                                final timeStr =
+                                    '${dt.month}/${dt.day} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+                                final hasAmount = item.amountYuan != null &&
+                                    item.amountYuan! > 0;
+                                return ListTile(
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                    vertical: 2,
+                                  ),
+                                  onTap: () => _showAmountPickerSheet(
+                                    context,
+                                    ref,
+                                    index: idx,
+                                    record: item,
+                                    initialPresets: commonAmounts,
+                                  ),
+                                  leading: Container(
+                                    width: 36,
+                                    height: 36,
+                                    decoration: BoxDecoration(
+                                      color: p.primary.withValues(alpha: 0.14),
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: Icon(
+                                      Icons.bolt_rounded,
+                                      color: p.primary,
+                                      size: 20,
+                                    ),
+                                  ),
+                                  title: Text(
+                                    '${item.stationAlias} · ${item.socketLabel}号口',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      color: p.textPrimary,
+                                    ),
+                                  ),
+                                  subtitle: Text(
+                                    '${item.serialNumber} · $timeStr',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: p.textSecondary,
+                                    ),
+                                  ),
+                                  trailing: Container(
+                                    width: 72,
+                                    alignment: Alignment.center,
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 5,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: hasAmount
+                                          ? p.primary.withValues(alpha: 0.15)
+                                          : p.secondaryBg,
+                                      borderRadius: BorderRadius.circular(10),
+                                      border: Border.all(
+                                        color: hasAmount
+                                            ? p.primary.withValues(alpha: 0.4)
+                                            : p.secondaryBorder,
+                                      ),
+                                    ),
+                                    child: Text(
+                                      hasAmount
+                                          ? '¥${_formatYuan(item.amountYuan!)}'
+                                          : '+ 记金额',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w800,
+                                        color: hasAmount
+                                            ? p.primary
+                                            : p.textSecondary,
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              },
                             ),
-                            child: Icon(
-                              Icons.bolt_rounded,
-                              color: p.primary,
-                              size: 20,
-                            ),
-                          ),
-                          title: Text(
-                            '${item.stationAlias} · ${item.socketLabel}号口',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontWeight: FontWeight.w700,
-                              color: p.textPrimary,
-                            ),
-                          ),
-                          subtitle: Text(
-                            '${item.serialNumber} · $timeStr',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: p.textSecondary,
-                            ),
-                          ),
-                          trailing: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 5,
-                            ),
-                            decoration: BoxDecoration(
-                              color: hasAmount
-                                  ? p.primary.withValues(alpha: 0.15)
-                                  : p.secondaryBg,
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(
-                                color: hasAmount
-                                    ? p.primary.withValues(alpha: 0.4)
-                                    : p.secondaryBorder,
-                              ),
-                            ),
-                            child: Text(
-                              hasAmount
-                                  ? '¥${_formatYuan(item.amountYuan!)}'
-                                  : '+ 记金额',
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w800,
-                                color: hasAmount ? p.primary : p.textSecondary,
-                              ),
-                            ),
-                          ),
-                        );
-                      },
+                          ],
+                        ],
+                      ),
                     ),
                   ),
               ],
@@ -732,7 +750,7 @@ class _FootprintTabState extends ConsumerState<FootprintTab> {
             ),
             child: Row(
               children: [
-                Icon(Icons.ev_station_rounded, size: 18, color: p.primary),
+                Icon(Icons.electric_moped_rounded, size: 18, color: p.primary),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(

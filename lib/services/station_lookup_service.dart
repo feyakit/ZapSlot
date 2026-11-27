@@ -73,6 +73,9 @@ class StationLiveInfo {
   int get idleCount =>
       gunStatuses.values.where((s) => s == GunWorkStatus.idle).length;
 
+  int get busyCount =>
+      gunStatuses.values.where((s) => s == GunWorkStatus.busy).length;
+
   int get totalCount => totalGunCount ?? gunStatuses.length;
 
   StationLiveInfo copyWith({
@@ -266,7 +269,8 @@ class StationLookupService {
           ? parsedTotal
           : (gunStatuses.isNotEmpty ? gunStatuses.length.clamp(1, 12) : null);
 
-      final isDeviceOffline = '${data['net_status'] ?? ''}'.trim() == '2';
+      final netStatus = '${data['net_status'] ?? ''}'.trim();
+      final isDeviceOffline = netStatus.isNotEmpty && netStatus != '2';
       final supportsFullSelfStop =
           '${data['full_self_stop_type'] ?? ''}'.trim() == '2';
 
