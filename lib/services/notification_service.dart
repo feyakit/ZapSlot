@@ -77,7 +77,9 @@ class NotificationService {
     required ChargingStation station,
     required int port,
     required String targetUrl,
+    int? displayPort,
   }) async {
+    final shownPort = displayPort ?? port;
     final payload = jsonEncode({
       'stationId': station.id,
       'serialNumber': station.serialNumber,
@@ -110,7 +112,7 @@ class NotificationService {
     await _plugin.show(
       _recoveryNotificationId,
       '网络已恢复：点击直达充电桩 ${station.serialNumber}',
-      '${station.alias} · $port号插座，点击立即唤起充电',
+      '${station.alias} · $shownPort号插座，点击立即唤起充电',
       details,
       payload: payload,
     );

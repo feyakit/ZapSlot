@@ -21,6 +21,7 @@ class _NoopNotificationService extends NotificationService {
     required ChargingStation station,
     required int port,
     required String targetUrl,
+    int? displayPort,
   }) async {}
 
   @override

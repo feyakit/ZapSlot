@@ -56,7 +56,15 @@ void chargeQuickBackgroundDispatcher() {
         ],
       );
 
-      final isReachable = await checker.hasInternetAccess;
+      var isReachable = false;
+      try {
+        isReachable = await checker.hasInternetAccess;
+      } catch (_) {
+        isReachable = false;
+      }
+      if (!isReachable) {
+        isReachable = await _quickBackgroundProbe();
+      }
       if (!isReachable) {
         // 返回 false 让 Android WorkManager 按退避策略重试，等待真正连通外网。
         return false;
@@ -73,6 +81,7 @@ void chargeQuickBackgroundDispatcher() {
       await notifications.showNetworkRestoredNotification(
         station: station,
         port: pending.port,
+        displayPort: settings.socketNumber(pending.port),
         targetUrl: uri.toString(),
       );
       return true;
@@ -80,6 +89,35 @@ void chargeQuickBackgroundDispatcher() {
       return false;
     }
   });
+}
+
+Future<bool> _quickBackgroundProbe() async {
+  const urls = [
+    'https://connect.rom.miui.com/generate_204',
+    'https://wifi.vivo.com.cn/generate_204',
+  ];
+  for (final raw in urls) {
+    final client = HttpClient()
+      ..connectionTimeout = const Duration(milliseconds: 1200);
+    try {
+      final req = await client
+          .getUrl(Uri.parse(raw))
+          .timeout(const Duration(milliseconds: 1200));
+      final res = await req.close().timeout(const Duration(milliseconds: 1500));
+      await res.drain<void>().timeout(
+            const Duration(milliseconds: 500),
+            onTimeout: () {},
+          );
+      if (res.statusCode == 204 || res.statusCode == 200) {
+        return true;
+      }
+    } catch (_) {
+      // 尝试下一个探测点
+    } finally {
+      client.close(force: true);
+    }
+  }
+  return false;
 }
 
 /// 后台排队恢复调度封装

@@ -146,11 +146,13 @@ class LaunchQueueNotifier extends StateNotifier<LaunchQueueState> {
 
   StreamSubscription<List<ConnectivityResult>>? _connectivitySub;
   StreamSubscription<InternetStatus>? _internetSub;
+  Timer? _pendingPollTimer;
   bool _isTriggeringRecovery = false;
+  bool _isPollingPending = false;
   DateTime? _lastOnlineConfirmedAt;
 
-  /// 在线热路径窗口：30 秒内确认过外网连通就直接拉起，不再重复探测。
-  static const Duration _onlineFreshWindow = Duration(minutes: 5);
+  /// 在线热路径窗口：仅 12 秒内确认过外网连通才跳过探针，避免走进地库时误用旧在线缓存。
+  static const Duration _onlineFreshWindow = Duration(seconds: 12);
 
   bool get _isOnlineFresh {
     final at = _lastOnlineConfirmedAt;
@@ -158,21 +160,48 @@ class LaunchQueueNotifier extends StateNotifier<LaunchQueueState> {
     return DateTime.now().difference(at) < _onlineFreshWindow;
   }
 
-  /// 轻量探针：单个国内 204 探测点、800ms 超时，用于点按时的即时判定。
+  /// 轻量双端点竞速探针：800ms 建连超时，任一国内 204 节点连通立即判在线，双双失败才判离线。
   Future<bool> _quickProbe() async {
     final override = _checkInternetOverride;
     if (override != null) return override();
+    const endpoints = [
+      'https://connect.rom.miui.com/generate_204',
+      'https://wifi.vivo.com.cn/generate_204',
+    ];
+    final completer = Completer<bool>();
+    var remaining = endpoints.length;
+
+    for (final raw in endpoints) {
+      unawaited(_probeSingleEndpoint(raw).then((ok) {
+        if (ok) {
+          if (!completer.isCompleted) completer.complete(true);
+        } else {
+          remaining--;
+          if (remaining == 0 && !completer.isCompleted) {
+            completer.complete(false);
+          }
+        }
+      }));
+    }
+
+    return completer.future.timeout(
+      const Duration(milliseconds: 1600),
+      onTimeout: () => false,
+    );
+  }
+
+  Future<bool> _probeSingleEndpoint(String rawUrl) async {
     final client = HttpClient()
       ..connectionTimeout = const Duration(milliseconds: 800);
     try {
       final request = await client
-          .getUrl(Uri.parse('https://connect.rom.miui.com/generate_204'))
+          .getUrl(Uri.parse(rawUrl))
           .timeout(const Duration(milliseconds: 800));
       final response = await request
           .close()
           .timeout(const Duration(milliseconds: 1200));
       await response.drain<void>().timeout(
-            const Duration(milliseconds: 500),
+            const Duration(milliseconds: 400),
             onTimeout: () {},
           );
       return response.statusCode == 204 || response.statusCode == 200;
@@ -183,6 +212,35 @@ class LaunchQueueNotifier extends StateNotifier<LaunchQueueState> {
     }
   }
 
+  void _syncPendingPollTimer() {
+    final shouldPoll =
+        mounted && state.hasPendingTask && !state.isOnline && state.isAppInForeground;
+    if (!shouldPoll) {
+      _pendingPollTimer?.cancel();
+      _pendingPollTimer = null;
+      return;
+    }
+    if (_pendingPollTimer != null) return;
+    // 坐电梯从地库弱 4G 无网恢复到有网时，系统常不发 ConnectivityResult 变更事件；
+    // 仅在存在离线排队任务且处于前台离线时每 2 秒轻探一次，恢复即刻拉起并自动停止。
+    _pendingPollTimer = Timer.periodic(const Duration(seconds: 2), (_) async {
+      if (!mounted || !state.hasPendingTask || state.isOnline || !state.isAppInForeground) {
+        _syncPendingPollTimer();
+        return;
+      }
+      if (_isPollingPending) return;
+      _isPollingPending = true;
+      try {
+        final reachable = await _quickProbe();
+        if (mounted && reachable) {
+          _handleNetworkTransition(true, triggerRecovery: true);
+        }
+      } finally {
+        _isPollingPending = false;
+      }
+    });
+  }
+
   Future<void> initialize() async {
     _restorePersistedQueue();
 
@@ -190,6 +248,8 @@ class LaunchQueueNotifier extends StateNotifier<LaunchQueueState> {
         _connectivityStreamOverride ?? Connectivity().onConnectivityChanged;
     _connectivitySub = connStream.listen((results) {
       if (!mounted) return;
+      // 网络接口发生任何切换（如 Wi-Fi 断线切蜂窝）时立即失效在线缓存，防止误判。
+      _lastOnlineConfirmedAt = null;
       final hasInterface = results.any((r) => r != ConnectivityResult.none);
       if (!hasInterface) {
         _handleNetworkTransition(false);
@@ -210,6 +270,7 @@ class LaunchQueueNotifier extends StateNotifier<LaunchQueueState> {
     // 冷启动只同步网络状态，不自动甩出旧排队任务以防误触；
     // 若有残留排队任务，主页横幅会显示“立即唤醒”按钮由用户手动确认。
     await refreshNetworkStatus(triggerRecovery: false);
+    _syncPendingPollTimer();
   }
 
   void _restorePersistedQueue() {
@@ -283,6 +344,8 @@ class LaunchQueueNotifier extends StateNotifier<LaunchQueueState> {
       state = state.copyWith(isOnline: nextIsOnline, isChecking: false);
     }
 
+    _syncPendingPollTimer();
+
     if (triggerRecovery &&
         !wasOnline &&
         nextIsOnline &&
@@ -310,10 +373,13 @@ class LaunchQueueNotifier extends StateNotifier<LaunchQueueState> {
         return;
       }
 
+      final displayPort = settings.socketNumber(port);
+
       // 无论前后台都先发高优先级本地通知，确保锁屏/后台切换时用户点一下即可直达。
       await _notifications.showNetworkRestoredNotification(
         station: station,
         port: port,
+        displayPort: displayPort,
         targetUrl: uri.toString(),
       );
 
@@ -324,13 +390,17 @@ class LaunchQueueNotifier extends StateNotifier<LaunchQueueState> {
         if (launched) {
           await _storage.clearPendingQueue();
           await _cancelBackground();
+          await _notifications.cancelRecoveryNotification();
+          if (!mounted) return;
           state = state.copyWith(
             clearPendingStation: true,
             clearPendingPort: true,
             clearQueuedAt: true,
             lastAttemptedUrl: uri.toString(),
-            statusMessage: '网络已恢复，已自动唤起 ${station.serialNumber} (${settings.socketNumber(port)}号口)',
+            statusMessage:
+                '网络已恢复，已自动唤起 ${station.serialNumber} ($displayPort号口)',
           );
+          _syncPendingPollTimer();
         } else {
           state = state.copyWith(
             lastAttemptedUrl: uri.toString(),
@@ -367,7 +437,7 @@ class LaunchQueueNotifier extends StateNotifier<LaunchQueueState> {
       return QueueActionOutcome.launchFailed;
     }
 
-    // 热路径：最近 30 秒内已确认在线时跳过探针，点按即刻拉起支付宝直达支付页。
+    // 热路径：仅 12 秒内已确认在线时跳过探针，避免下地库误判在线。
     if (!_isOnlineFresh) {
       final online = await _quickProbe();
       if (mounted) {
@@ -385,7 +455,7 @@ class LaunchQueueNotifier extends StateNotifier<LaunchQueueState> {
           : QueueActionOutcome.launchFailed;
     }
     if (launched) {
-      // 拉起成功说明网络与目标 App 都可用，记一次"刚确认在线"，下次点按直接走热路径。
+      // 拉起成功说明网络与目标 App 都可用，记一次"刚确认在线"，短时间连点走热路径。
       _lastOnlineConfirmedAt = DateTime.now();
       await _storage.clearPendingQueue();
       await _cancelBackground();
@@ -400,6 +470,7 @@ class LaunchQueueNotifier extends StateNotifier<LaunchQueueState> {
         lastAttemptedUrl: uri.toString(),
         statusMessage: '已直达 ${station.serialNumber} (${settings.socketNumber(safePort)}号口)',
       );
+      _syncPendingPollTimer();
       return QueueActionOutcome.launchedImmediately;
     }
 
@@ -434,6 +505,7 @@ class LaunchQueueNotifier extends StateNotifier<LaunchQueueState> {
       lastAttemptedUrl: uri.toString(),
       statusMessage: '已加入地库离线排队：${station.serialNumber} · ${_readSettings().socketNumber(port)}号口',
     );
+    _syncPendingPollTimer();
     return QueueActionOutcome.queuedOffline;
   }
 
@@ -464,6 +536,7 @@ class LaunchQueueNotifier extends StateNotifier<LaunchQueueState> {
         lastAttemptedUrl: uri.toString(),
         statusMessage: '已唤起 ${station.serialNumber} (${_readSettings().socketNumber(port)}号口)',
       );
+      _syncPendingPollTimer();
       return true;
     }
 
@@ -485,6 +558,7 @@ class LaunchQueueNotifier extends StateNotifier<LaunchQueueState> {
       clearQueuedAt: true,
       statusMessage: '已取消离线排队',
     );
+    _syncPendingPollTimer();
   }
 
   /// 同步充电桩列表变更（例如用户修改了正在排队的桩别名/模板或删除了该桩）。
@@ -502,9 +576,26 @@ class LaunchQueueNotifier extends StateNotifier<LaunchQueueState> {
 
   void setAppInForeground(bool isForeground) {
     if (!mounted) return;
+    final wasInBackground = !state.isAppInForeground;
     state = state.copyWith(isAppInForeground: isForeground);
-    if (isForeground) {
-      unawaited(refreshNetworkStatus());
+    if (!isForeground) {
+      _syncPendingPollTimer();
+      return;
+    }
+
+    // 切回前台时立即清空旧在线缓存，重新探测；若后台期间网络已恢复且仍有未执行排队任务，自动拉起。
+    _lastOnlineConfirmedAt = null;
+    _syncPendingPollTimer();
+    unawaited(_refreshOnForegroundResume(wasInBackground: wasInBackground));
+  }
+
+  Future<void> _refreshOnForegroundResume({required bool wasInBackground}) async {
+    final online = await refreshNetworkStatus(triggerRecovery: true);
+    if (!mounted || !online || !wasInBackground) return;
+    // 若在后台期间网络就已恢复（state.isOnline 早就是 true），_handleNetworkTransition
+    // 因 !wasOnline 为 false 不会重复触发，此处在用户回到前台时补拉起一次。
+    if (state.hasPendingTask && _readSettings().autoLaunchInForeground) {
+      await _onNetworkRecoveredWithPendingTask();
     }
   }
 
@@ -532,6 +623,7 @@ class LaunchQueueNotifier extends StateNotifier<LaunchQueueState> {
           if (launched) {
             await _storage.clearPendingQueue();
             await _cancelBackground();
+            await _notifications.cancelRecoveryNotification();
             if (!mounted) return;
             state = state.copyWith(
               clearPendingStation: true,
@@ -540,6 +632,7 @@ class LaunchQueueNotifier extends StateNotifier<LaunchQueueState> {
               lastAttemptedUrl: url,
               statusMessage: '已通过通知直达充电页',
             );
+            _syncPendingPollTimer();
             return;
           }
         }
@@ -572,6 +665,7 @@ class LaunchQueueNotifier extends StateNotifier<LaunchQueueState> {
 
   @override
   void dispose() {
+    _pendingPollTimer?.cancel();
     _connectivitySub?.cancel();
     _internetSub?.cancel();
     super.dispose();

@@ -21,11 +21,13 @@ class _FakeNotificationService extends NotificationService {
     required ChargingStation station,
     required int port,
     required String targetUrl,
+    int? displayPort,
   }) async {
     shown.add({
       'stationId': station.id,
       'serialNumber': station.serialNumber,
       'port': port,
+      'displayPort': displayPort ?? port,
       'url': targetUrl,
     });
   }
@@ -239,6 +241,62 @@ void main() {
       expect(notifier.state.hasPendingTask, isFalse);
       expect(storage.loadPendingQueue(), isNull);
       expect(notifier.state.statusMessage, contains('已直达'));
+
+      notifier.dispose();
+    });
+
+    test('background network recovery then returning to foreground auto-launches pending task',
+        () async {
+      final notifier = createNotifier();
+      await notifier.initialize();
+      notifier.setAppInForeground(false);
+
+      final station1414 =
+          stations.firstWhere((s) => s.serialNumber == 'W52001414');
+      await notifier.triggerOrQueue(station1414, 1); // 0号口
+      expect(notifier.state.hasPendingTask, isTrue);
+
+      // 后台期间恢复网络：仅发通知，不拉起
+      isOnlineFlag = true;
+      internetController.add(InternetStatus.connected);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(notifications.shown.length, 1);
+      expect(notifications.shown.first['displayPort'], 0);
+      expect(launchedUris, isEmpty);
+      expect(notifier.state.hasPendingTask, isTrue);
+
+      // 用户未点通知，直接解锁回到闪雀前台 -> 应自动补拉起
+      notifier.setAppInForeground(true);
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+
+      expect(launchedUris.length, 1);
+      expect(launchedUris.single.toString(), contains('device_no%3DW52001414'));
+      expect(launchedUris.single.toString(), contains('gun_num%3D0'));
+      expect(notifier.state.hasPendingTask, isFalse);
+      expect(storage.loadPendingQueue(), isNull);
+
+      notifier.dispose();
+    });
+
+    test('connectivity drop after being online invalidates cache and queues offline in garage',
+        () async {
+      isOnlineFlag = true;
+      final notifier = createNotifier();
+      await notifier.initialize();
+      expect(notifier.state.isOnline, isTrue);
+
+      // 模拟走进地库：网络切换且外网不可达
+      isOnlineFlag = false;
+      connectivityController.add([ConnectivityResult.mobile]);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      final station1715 =
+          stations.firstWhere((s) => s.serialNumber == 'W52001715');
+      final outcome = await notifier.triggerOrQueue(station1715, 5);
+      expect(outcome, QueueActionOutcome.queuedOffline);
+      expect(notifier.state.hasPendingTask, isTrue);
+      expect(launchedUris, isEmpty);
+      expect(bgScheduleCount, 1);
 
       notifier.dispose();
     });
