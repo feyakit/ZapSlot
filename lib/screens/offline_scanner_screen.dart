@@ -28,7 +28,8 @@ class _OfflineScannerScreenState extends ConsumerState<OfflineScannerScreen> {
   static const List<double> _zoomLevels = [0.0, 0.35, 0.7];
   static const List<String> _zoomLabels = ['1x', '2x', '3x'];
 
-  late final MobileScannerController _scannerController;
+  late MobileScannerController _scannerController;
+  int _cameraGeneration = 0;
   late final TextRecognizer _textRecognizer;
 
   ScannerMode _mode = ScannerMode.qr;
@@ -42,11 +43,26 @@ class _OfflineScannerScreenState extends ConsumerState<OfflineScannerScreen> {
   @override
   void initState() {
     super.initState();
-    _scannerController = MobileScannerController(
-      detectionSpeed: DetectionSpeed.normal,
-      returnImage: true,
-    );
+    _scannerController = _buildController();
     _textRecognizer = TextRecognizer(script: TextRecognitionScript.latin);
+  }
+
+  MobileScannerController _buildController() => MobileScannerController(
+        detectionSpeed: DetectionSpeed.normal,
+        returnImage: true,
+      );
+
+  /// 相机启动失败（ML Kit/相机被占用等）时可一键重建控制器重试。
+  Future<void> _restartCamera() async {
+    try {
+      await _scannerController.dispose();
+    } catch (_) {}
+    if (!mounted) return;
+    setState(() {
+      _scannerController = _buildController();
+      _cameraGeneration++;
+      _hintText = '正在重启相机…';
+    });
   }
 
   @override
@@ -618,6 +634,7 @@ class _OfflineScannerScreenState extends ConsumerState<OfflineScannerScreen> {
         fit: StackFit.expand,
         children: [
           MobileScanner(
+            key: ValueKey('scanner-$_cameraGeneration'),
             controller: _scannerController,
             onDetect: _onDetect,
             errorBuilder: (context, error, _) {
@@ -652,6 +669,20 @@ class _OfflineScannerScreenState extends ConsumerState<OfflineScannerScreen> {
                         ),
                       ),
                       const SizedBox(height: 16),
+                      ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.cyan,
+                          foregroundColor: Colors.black,
+                          minimumSize: const Size(220, 46),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        onPressed: _restartCamera,
+                        icon: const Icon(Icons.refresh_rounded, size: 18),
+                        label: const Text('重试相机'),
+                      ),
+                      const SizedBox(height: 10),
                       OutlinedButton.icon(
                         style: OutlinedButton.styleFrom(
                           minimumSize: const Size(220, 46),
