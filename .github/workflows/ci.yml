@@ -90,7 +90,10 @@ jobs:
           echo "签名配置已写入（密钥来自 GitHub Secrets，不进仓库）"
 
       - name: Build Android Release APK (per ABI)
-        run: flutter build apk --release --split-per-abi
+        run: |
+          flutter build apk --release --split-per-abi \
+            --dart-define=APP_BUILD="$(git rev-parse --short HEAD) · $(date +%m-%d\ %H:%M)"
+
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4

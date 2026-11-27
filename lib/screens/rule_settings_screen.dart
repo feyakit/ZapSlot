@@ -486,6 +486,16 @@ class _RuleSettingsScreenState extends ConsumerState<RuleSettingsScreen> {
                     ),
                   ),
                 ),
+                const SizedBox(height: 14),
+                Center(
+                  child: Text(
+                    '构建版本：${const String.fromEnvironment('APP_BUILD', defaultValue: 'dev')}',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
