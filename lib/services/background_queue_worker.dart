@@ -23,6 +23,20 @@ void chargeQuickBackgroundDispatcher() {
       final prefs = await SharedPreferences.getInstance();
       await prefs.reload();
       final storage = StorageService(prefs);
+
+      if (taskName == BackgroundQueueWorker.reminderTaskIdentifier) {
+        final reminder = storage.loadChargingReminder();
+        if (reminder == null) return true;
+        final notifications = NotificationService();
+        await notifications.initialize();
+        await notifications.showChargingReminderNotification(
+          stationName: reminder.stationName,
+          portLabel: reminder.portLabel,
+        );
+        await storage.clearChargingReminder();
+        return true;
+      }
+
       final pending = storage.loadPendingQueue();
       if (pending == null) {
         await BackgroundQueueWorker.cancelPendingRecovery();
@@ -128,6 +142,9 @@ class BackgroundQueueWorker {
       'com.feyakit.chargeQuick.networkRecovery';
   static const String oneOffUniqueName = 'charge_quick_recovery_one_off';
   static const String periodicUniqueName = 'charge_quick_recovery_periodic';
+  static const String reminderTaskIdentifier =
+      'com.feyakit.chargeQuick.chargingReminder';
+  static const String reminderUniqueName = 'charge_quick_charging_reminder';
 
   static bool get _isMobilePlatform =>
       !kIsWeb && (Platform.isAndroid || Platform.isIOS);
@@ -174,5 +191,25 @@ class BackgroundQueueWorker {
     } catch (_) {
       // 静默忽略
     }
+  }
+
+  /// 注册定时取车/拔枪提醒（无网络依赖）。
+  static Future<void> scheduleChargingReminder(Duration delay) async {
+    if (!_isMobilePlatform) return;
+    try {
+      await Workmanager().registerOneOffTask(
+        reminderUniqueName,
+        reminderTaskIdentifier,
+        initialDelay: delay,
+        existingWorkPolicy: ExistingWorkPolicy.replace,
+      );
+    } catch (_) {}
+  }
+
+  static Future<void> cancelChargingReminder() async {
+    if (!_isMobilePlatform) return;
+    try {
+      await Workmanager().cancelByUniqueName(reminderUniqueName);
+    } catch (_) {}
   }
 }

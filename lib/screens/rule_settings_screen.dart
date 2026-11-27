@@ -10,7 +10,9 @@ import '../widgets/network_diagnostics_sheet.dart';
 
 /// URL 重写规则与全局参数设置页
 class RuleSettingsScreen extends ConsumerStatefulWidget {
-  const RuleSettingsScreen({super.key});
+  const RuleSettingsScreen({super.key, this.embedded = false});
+
+  final bool embedded;
 
   @override
   ConsumerState<RuleSettingsScreen> createState() => _RuleSettingsScreenState();
@@ -118,14 +120,25 @@ class _RuleSettingsScreenState extends ConsumerState<RuleSettingsScreen> {
     );
     await ref.read(settingsProvider.notifier).updateSettings(next);
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('规则配置已保存')),
-    );
-    Navigator.of(context).pop();
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        const SnackBar(content: Text('规则配置已保存')),
+      );
+    if (!widget.embedded) {
+      Navigator.of(context).pop();
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<AppSettings>(settingsProvider, (prev, next) {
+      if (prev?.globalUrlTemplate != next.globalUrlTemplate &&
+          _templateController.text != next.globalUrlTemplate) {
+        _templateController.text = next.globalUrlTemplate;
+      }
+    });
+
     final samplePrefix = _prefixController.text.trim().isEmpty
         ? AppSettings.defaultQuickInputPrefix
         : _prefixController.text.trim().toUpperCase();
@@ -140,19 +153,25 @@ class _RuleSettingsScreenState extends ConsumerState<RuleSettingsScreen> {
         : UrlRuleEngine.validateTemplate(_templateController.text);
     final regexError = UrlRuleEngine.validateRegex(_regexController.text);
 
-    return Scaffold(
+    final p = AppTheme.paletteOf(context);
+    final themePref =
+        ref.watch(settingsProvider.select((s) => s.themePreference));
+
+    final scaffold = Scaffold(
+      backgroundColor: Colors.transparent,
       appBar: AppBar(
-        title: const Text(
-          '规则与直达设置',
-          style: TextStyle(fontWeight: FontWeight.w800),
+        automaticallyImplyLeading: !widget.embedded,
+        title: Text(
+          widget.embedded ? '设置与规则' : '规则与直达设置',
+          style: const TextStyle(fontWeight: FontWeight.w800),
         ),
         actions: [
           TextButton(
             onPressed: _save,
-            child: const Text(
+            child: Text(
               '保存',
               style: TextStyle(
-                color: AppColors.emerald,
+                color: p.primary,
                 fontSize: 16,
                 fontWeight: FontWeight.w800,
               ),
@@ -161,8 +180,43 @@ class _RuleSettingsScreenState extends ConsumerState<RuleSettingsScreen> {
         ],
       ),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 36),
+        padding: EdgeInsets.fromLTRB(
+          16,
+          12,
+          16,
+          widget.embedded ? 104 : 36,
+        ),
         children: [
+          _SectionCard(
+            title: '外观与液态玻璃主题',
+            subtitle: '方案 5（浅透极光）与方案 6（深透黑曜），支持自动跟随系统或手动切换。',
+            child: SegmentedButton<AppThemePreference>(
+              segments: const [
+                ButtonSegment(
+                  value: AppThemePreference.system,
+                  label: Text('自动'),
+                  icon: Icon(Icons.brightness_auto_rounded, size: 17),
+                ),
+                ButtonSegment(
+                  value: AppThemePreference.light,
+                  label: Text('浅透玻璃'),
+                  icon: Icon(Icons.light_mode_rounded, size: 17),
+                ),
+                ButtonSegment(
+                  value: AppThemePreference.dark,
+                  label: Text('深透黑曜'),
+                  icon: Icon(Icons.dark_mode_rounded, size: 17),
+                ),
+              ],
+              selected: {themePref},
+              onSelectionChanged: (values) {
+                ref
+                    .read(settingsProvider.notifier)
+                    .updateThemePreference(values.first);
+              },
+            ),
+          ),
+          const SizedBox(height: 14),
           _SectionCard(
             title: '1. 链接匹配优先级',
             subtitle: '若单桩设置了独立覆盖链接，则始终最高优使用该单桩链接。',
@@ -214,32 +268,32 @@ class _RuleSettingsScreenState extends ConsumerState<RuleSettingsScreen> {
                   children: [
                     ActionChip(
                       label: const Text('插入 {SN}'),
-                      backgroundColor: AppColors.surfaceElevated,
-                      side: const BorderSide(color: AppColors.cyan),
+                      backgroundColor: p.secondaryBg,
+                      side: BorderSide(color: p.primary),
                       onPressed: () => _insertPlaceholder('{SN}'),
                     ),
                     ActionChip(
                       label: const Text('插入 {PORT}'),
-                      backgroundColor: AppColors.surfaceElevated,
-                      side: const BorderSide(color: AppColors.cyan),
+                      backgroundColor: p.secondaryBg,
+                      side: BorderSide(color: p.primary),
                       onPressed: () => _insertPlaceholder('{PORT}'),
                     ),
                     ActionChip(
                       label: const Text('插入 {PORT_0}'),
-                      backgroundColor: AppColors.surfaceElevated,
-                      side: const BorderSide(color: AppColors.cyan),
+                      backgroundColor: p.secondaryBg,
+                      side: BorderSide(color: p.primary),
                       onPressed: () => _insertPlaceholder('{PORT_0}'),
                     ),
                     ActionChip(
                       label: const Text('插入 {RAW_URL_ENCODED}'),
-                      backgroundColor: AppColors.surfaceElevated,
-                      side: const BorderSide(color: AppColors.cyan),
+                      backgroundColor: p.secondaryBg,
+                      side: BorderSide(color: p.primary),
                       onPressed: () => _insertPlaceholder('{RAW_URL_ENCODED}'),
                     ),
                     ActionChip(
                       label: const Text('插入 {RAW_URL_PORT0_ENCODED}'),
-                      backgroundColor: AppColors.surfaceElevated,
-                      side: const BorderSide(color: AppColors.cyan),
+                      backgroundColor: p.secondaryBg,
+                      side: BorderSide(color: p.primary),
                       onPressed: () =>
                           _insertPlaceholder('{RAW_URL_PORT0_ENCODED}'),
                     ),
@@ -250,22 +304,22 @@ class _RuleSettingsScreenState extends ConsumerState<RuleSettingsScreen> {
                   width: double.infinity,
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: AppColors.bg,
+                    color: p.secondaryBg,
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppColors.border),
+                    border: Border.all(color: p.secondaryBorder),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Row(
                         children: [
-                          const Expanded(
+                          Expanded(
                             child: Text(
                               '实时渲染预览（示例 3号口）',
                               style: TextStyle(
                                 fontSize: 11,
                                 fontWeight: FontWeight.w700,
-                                color: AppColors.textSecondary,
+                                color: p.textSecondary,
                               ),
                             ),
                           ),
@@ -273,8 +327,8 @@ class _RuleSettingsScreenState extends ConsumerState<RuleSettingsScreen> {
                             InkWell(
                               borderRadius: BorderRadius.circular(8),
                               onTap: () => _testPreviewUrl(preview),
-                              child: const Padding(
-                                padding: EdgeInsets.symmetric(
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
                                   horizontal: 6,
                                   vertical: 2,
                                 ),
@@ -283,7 +337,7 @@ class _RuleSettingsScreenState extends ConsumerState<RuleSettingsScreen> {
                                   style: TextStyle(
                                     fontSize: 11,
                                     fontWeight: FontWeight.w800,
-                                    color: AppColors.cyan,
+                                    color: p.primary,
                                   ),
                                 ),
                               ),
@@ -293,10 +347,10 @@ class _RuleSettingsScreenState extends ConsumerState<RuleSettingsScreen> {
                       const SizedBox(height: 4),
                       Text(
                         preview.isEmpty ? '（模板为空）' : preview,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontFamily: 'monospace',
                           fontSize: 12,
-                          color: AppColors.emerald,
+                          color: p.idle,
                         ),
                       ),
                     ],
@@ -325,9 +379,9 @@ class _RuleSettingsScreenState extends ConsumerState<RuleSettingsScreen> {
                       width: double.infinity,
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: AppColors.surfaceElevated,
+                        color: p.secondaryBg,
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: AppColors.border),
+                        border: Border.all(color: p.secondaryBorder),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -337,18 +391,18 @@ class _RuleSettingsScreenState extends ConsumerState<RuleSettingsScreen> {
                               Expanded(
                                 child: Text(
                                   preset.name,
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontWeight: FontWeight.w700,
-                                    color: AppColors.textPrimary,
+                                    color: p.textPrimary,
                                   ),
                                 ),
                               ),
-                              const Text(
+                              Text(
                                 '应用',
                                 style: TextStyle(
                                   fontSize: 12,
                                   fontWeight: FontWeight.w700,
-                                  color: AppColors.cyan,
+                                  color: p.primary,
                                 ),
                               ),
                             ],
@@ -356,9 +410,9 @@ class _RuleSettingsScreenState extends ConsumerState<RuleSettingsScreen> {
                           const SizedBox(height: 4),
                           Text(
                             preset.description,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 12,
-                              color: AppColors.textSecondary,
+                              color: p.textSecondary,
                             ),
                           ),
                         ],
@@ -407,9 +461,9 @@ class _RuleSettingsScreenState extends ConsumerState<RuleSettingsScreen> {
                     ),
                     Text(
                       '$_defaultPortCount 个',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontWeight: FontWeight.w800,
-                        color: AppColors.cyan,
+                        color: p.primary,
                       ),
                     ),
                   ],
@@ -419,7 +473,7 @@ class _RuleSettingsScreenState extends ConsumerState<RuleSettingsScreen> {
                   min: 4,
                   max: 12,
                   divisions: 8,
-                  activeColor: AppColors.cyan,
+                  activeColor: p.primary,
                   onChanged: (value) {
                     setState(() => _defaultPortCount = value.round());
                   },
@@ -427,11 +481,11 @@ class _RuleSettingsScreenState extends ConsumerState<RuleSettingsScreen> {
                 SwitchListTile(
                   value: _autoLaunchInForeground,
                   contentPadding: EdgeInsets.zero,
-                  activeThumbColor: AppColors.emerald,
+                  activeThumbColor: p.primary,
                   title: const Text('前台恢复信号时自动跳转'),
-                  subtitle: const Text(
+                  subtitle: Text(
                     '亮屏拿着手机出电梯时自动拉起目标 App；锁屏/后台则推送高优先级通知点击直达',
-                    style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                    style: TextStyle(fontSize: 12, color: p.textSecondary),
                   ),
                   onChanged: (value) {
                     setState(() => _autoLaunchInForeground = value);
@@ -440,11 +494,11 @@ class _RuleSettingsScreenState extends ConsumerState<RuleSettingsScreen> {
                 SwitchListTile(
                   value: _autoAddScannedStation,
                   contentPadding: EdgeInsets.zero,
-                  activeThumbColor: AppColors.emerald,
+                  activeThumbColor: p.primary,
                   title: const Text('扫到新码自动添加充电桩'),
-                  subtitle: const Text(
+                  subtitle: Text(
                     '扫码或 OCR 识别到未收录的桩号时自动建桩并置顶；已收录的桩只更新二维码，保留别名与自定义链接',
-                    style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                    style: TextStyle(fontSize: 12, color: p.textSecondary),
                   ),
                   onChanged: (value) {
                     setState(() => _autoAddScannedStation = value);
@@ -453,11 +507,11 @@ class _RuleSettingsScreenState extends ConsumerState<RuleSettingsScreen> {
                 SwitchListTile(
                   value: _portIndexBaseZero,
                   contentPadding: EdgeInsets.zero,
-                  activeThumbColor: AppColors.emerald,
+                  activeThumbColor: p.primary,
                   title: const Text('插座号按 0 起始传参'),
-                  subtitle: const Text(
+                  subtitle: Text(
                     '1 号插座传 gun_num=0（微云充默认如此）；若目标页高亮的插座号与所选不一致，关掉此项改为 1 起始',
-                    style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                    style: TextStyle(fontSize: 12, color: p.textSecondary),
                   ),
                   onChanged: (value) {
                     setState(() => _portIndexBaseZero = value);
@@ -467,32 +521,32 @@ class _RuleSettingsScreenState extends ConsumerState<RuleSettingsScreen> {
                 OutlinedButton.icon(
                   style: OutlinedButton.styleFrom(
                     minimumSize: const Size.fromHeight(48),
-                    side: const BorderSide(color: AppColors.border),
+                    side: BorderSide(color: p.secondaryBorder),
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(14),
                     ),
                   ),
                   onPressed: () => showNetworkDiagnosticsSheet(context),
-                  icon: const Icon(
+                  icon: Icon(
                     Icons.wifi_tethering_rounded,
                     size: 18,
-                    color: AppColors.textSecondary,
+                    color: p.textSecondary,
                   ),
-                  label: const Text(
+                  label: Text(
                     '网络诊断（排查"有信号却提示离线"）',
                     style: TextStyle(
                       fontSize: 13,
-                      color: AppColors.textSecondary,
+                      color: p.textSecondary,
                     ),
                   ),
                 ),
                 const SizedBox(height: 14),
-                const Center(
+                Center(
                   child: Text(
                     '构建版本：${String.fromEnvironment('APP_BUILD', defaultValue: 'dev')}',
                     style: TextStyle(
                       fontSize: 11,
-                      color: AppColors.textSecondary,
+                      color: p.textSecondary,
                     ),
                   ),
                 ),
@@ -502,6 +556,7 @@ class _RuleSettingsScreenState extends ConsumerState<RuleSettingsScreen> {
         ],
       ),
     );
+    return widget.embedded ? scaffold : ZapAuroraBackdrop(child: scaffold);
   }
 }
 
@@ -518,31 +573,28 @@ class _SectionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    final p = AppTheme.paletteOf(context);
+    return ZapGlassCard(
+      borderRadius: 22,
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: AppColors.border),
-      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             title,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w800,
-              color: AppColors.textPrimary,
+              color: p.textPrimary,
             ),
           ),
           if (subtitle != null) ...[
             const SizedBox(height: 4),
             Text(
               subtitle!,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 12,
-                color: AppColors.textSecondary,
+                color: p.textSecondary,
               ),
             ),
           ],

@@ -4,9 +4,12 @@ import 'dart:convert';
 import 'package:charge_quick/models/app_settings.dart';
 import 'package:charge_quick/models/charging_station.dart';
 import 'package:charge_quick/providers/app_providers.dart';
+import 'package:charge_quick/providers/charging_history_provider.dart';
 import 'package:charge_quick/services/launch_queue_service.dart';
 import 'package:charge_quick/services/notification_service.dart';
+import 'package:charge_quick/services/station_lookup_service.dart';
 import 'package:charge_quick/services/storage_service.dart';
+import 'package:charge_quick/services/url_rule_engine.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:internet_connection_checker_plus/internet_connection_checker_plus.dart';
@@ -370,6 +373,132 @@ void main() {
       expect(stationsNotifier.state.first.lastUsedPort, 6);
 
       stationsNotifier.dispose();
+    });
+
+    test('StationLookupService MD5 signature and device_name cleaning', () {
+      expect(
+        StationLookupService.md5Hex('abc'),
+        '900150983cd24fb0d6963f7d28e17f72',
+      );
+      expect(
+        StationLookupService.cleanDeviceName(
+          '苏州·香滨水岸8.4地下室、W52001414',
+          'W52001414',
+        ),
+        '苏州·香滨水岸8.4地下室',
+      );
+      expect(
+        StationLookupService.isDefaultPlaceholderAlias('车库桩 1414', 'W52001414'),
+        isTrue,
+      );
+      expect(
+        StationLookupService.isDefaultPlaceholderAlias('8.4地下室靠电梯', 'W52001414'),
+        isFalse,
+      );
+    });
+
+    test('autoFillMissingAddresses replaces placeholder alias and preserves custom alias',
+        () async {
+      final notifier = StationsNotifier(
+        storage,
+        stations,
+        fetchLocation: (sn) async {
+          if (sn == 'W52009999') {
+            return const StationLocationInfo(
+              displayName: '苏州·香滨水岸8.6地下室',
+              fullAddress: '苏州·香滨水岸8.6地下室（苏州市吴中区）',
+            );
+          }
+          if (sn == 'W52001715') {
+            return const StationLocationInfo(
+              displayName: '苏州·香滨水岸8.5地下室',
+              fullAddress: '苏州·香滨水岸8.5地下室（苏州市吴中区）',
+            );
+          }
+          return null;
+        },
+      );
+
+      // 模拟地库无网时新增桩（带默认占位名）
+      await notifier.collectScannedStation(
+        serialNumber: 'W52009999',
+        rawUrl: 'http://weixin.weiyunchong.com/payQRcode.html?device_no=W52009999',
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      final newStation =
+          notifier.state.firstWhere((s) => s.serialNumber == 'W52009999');
+      expect(newStation.alias, '苏州·香滨水岸8.6地下室');
+      expect(newStation.address, '苏州·香滨水岸8.6地下室（苏州市吴中区）');
+
+      // 手动补全已有自定义别名的桩：只补 address，不覆盖用户别名
+      await notifier.autoFillMissingAddresses();
+      final customStation =
+          notifier.state.firstWhere((s) => s.serialNumber == 'W52001715');
+      expect(customStation.alias, 'B2-A区 1号桩');
+      expect(customStation.address, '苏州·香滨水岸8.5地下室（苏州市吴中区）');
+
+      notifier.dispose();
+    });
+
+    test('parseGunStatuses, formatPackageLabel, and pinStationToTop work properly',
+        () async {
+      final parsed = StationLookupService.parseGunStatuses([
+        {'gun_num': '0', 'work_status': '1'},
+        {'gun_num': '1', 'work_status': '2'},
+        {'gun_num': '2', 'work_status': '3'},
+      ]);
+      expect(parsed[1], GunWorkStatus.idle);
+      expect(parsed[2], GunWorkStatus.busy);
+      expect(parsed[3], GunWorkStatus.fault);
+
+      expect(
+        StationLookupService.formatPackageLabel({
+          'charge_price': 2,
+          'charge_duration': '600',
+        }),
+        '2元/10h',
+      );
+
+      final notifier = StationsNotifier(storage, stations);
+      final secondId = notifier.state[1].id;
+      await notifier.pinStationToTop(secondId);
+      expect(notifier.state.first.id, secondId);
+
+      final customGunNums = StationLookupService.parseGunNums([
+        {'gun_num': '1', 'work_status': '1'},
+        {'gun_num': '2', 'work_status': '2'},
+        {'gun_num': '5', 'work_status': '1'},
+      ]);
+      expect(customGunNums, ['1', '2', '5']);
+      final oddStation = stations.first.copyWith(
+        portCount: 3,
+        gunNums: customGunNums,
+      );
+      expect(oddStation.socketLabel(3, 0), '5');
+      final uri = UrlRuleEngine.buildTargetUri(oddStation, 3, settings);
+      expect(uri.toString(), contains('gun_num%3D5'));
+
+      notifier.dispose();
+    });
+
+    test('ChargingHistoryNotifier records and clears local charging footprints',
+        () async {
+      final historyNotifier = ChargingHistoryNotifier(storage);
+      expect(historyNotifier.state, isEmpty);
+
+      await historyNotifier.recordLaunch(
+        station: stations.first,
+        socketLabel: '7',
+      );
+      expect(historyNotifier.state.length, 1);
+      expect(historyNotifier.state.first.socketLabel, '7');
+      expect(storage.loadChargingHistory().length, 1);
+
+      await historyNotifier.clearAll();
+      expect(historyNotifier.state, isEmpty);
+      expect(storage.loadChargingHistory(), isEmpty);
+      historyNotifier.dispose();
     });
   });
 }

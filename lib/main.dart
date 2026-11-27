@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'models/app_settings.dart';
 import 'providers/app_providers.dart';
 import 'screens/home_screen.dart';
 import 'services/background_queue_worker.dart';
@@ -92,10 +93,32 @@ class _ChargeQuickAppState extends ConsumerState<ChargeQuickApp>
 
   @override
   Widget build(BuildContext context) {
+    final themePref = ref.watch(
+      settingsProvider.select((s) => s.themePreference),
+    );
+    final themeMode = switch (themePref) {
+      AppThemePreference.system => ThemeMode.system,
+      AppThemePreference.light => ThemeMode.light,
+      AppThemePreference.dark => ThemeMode.dark,
+    };
     return MaterialApp(
       title: '闪雀 ZapSlot',
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.darkTheme,
+      theme: AppTheme.lightTheme,
+      darkTheme: AppTheme.darkTheme,
+      themeMode: themeMode,
+      builder: (context, child) {
+        final media = MediaQuery.of(context);
+        return MediaQuery(
+          data: media.copyWith(
+            textScaler: media.textScaler.clamp(
+              minScaleFactor: 0.9,
+              maxScaleFactor: 1.15,
+            ),
+          ),
+          child: child ?? const SizedBox.shrink(),
+        );
+      },
       home: const HomeScreen(),
     );
   }

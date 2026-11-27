@@ -6,12 +6,13 @@ import '../theme/app_theme.dart';
 /// 现场网络诊断面板：长按首页网络胶囊或在规则页点击"网络诊断"打开。
 Future<void> showNetworkDiagnosticsSheet(BuildContext context) {
   var diagnosticsFuture = NetworkDiagnostics.runProbes();
+  final p = AppTheme.paletteOf(context);
 
   return showModalBottomSheet<void>(
     context: context,
-    backgroundColor: AppColors.surfaceElevated,
+    backgroundColor: p.modalSurface,
     shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
     ),
     builder: (sheetContext) => StatefulBuilder(
       builder: (sheetContext, setSheetState) {
@@ -22,20 +23,20 @@ Future<void> showNetworkDiagnosticsSheet(BuildContext context) {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
+              Text(
                 '网络诊断',
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.w800,
-                  color: AppColors.textPrimary,
+                  color: p.textPrimary,
                 ),
               ),
               const SizedBox(height: 4),
-              const Text(
+              Text(
                 '全部探针走 HTTPS，命中任意一个即视为在线',
                 style: TextStyle(
                   fontSize: 12,
-                  color: AppColors.textSecondary,
+                  color: p.textSecondary,
                 ),
               ),
               const SizedBox(height: 14),
@@ -43,9 +44,9 @@ Future<void> showNetworkDiagnosticsSheet(BuildContext context) {
                 future: NetworkDiagnostics.interfaceSummary(),
                 builder: (context, snapshot) => Text(
                   '当前接口：${snapshot.data ?? '读取中…'}',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 13,
-                    color: AppColors.textPrimary,
+                    color: p.textPrimary,
                   ),
                 ),
               ),
@@ -54,11 +55,11 @@ Future<void> showNetworkDiagnosticsSheet(BuildContext context) {
                 future: future,
                 builder: (context, snapshot) {
                   if (!snapshot.hasData) {
-                    return const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 12),
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
                       child: Text(
                         '正在探测…',
-                        style: TextStyle(color: AppColors.textSecondary),
+                        style: TextStyle(color: p.textSecondary),
                       ),
                     );
                   }
@@ -72,27 +73,25 @@ Future<void> showNetworkDiagnosticsSheet(BuildContext context) {
                               Icon(
                                 result.ok
                                     ? Icons.check_circle_rounded
-                                    : Icons.error_outline_rounded,
+                                    : Icons.error_rounded,
                                 size: 16,
-                                color: result.ok
-                                    ? AppColors.emerald
-                                    : AppColors.danger,
+                                color: result.ok ? p.idle : p.danger,
                               ),
                               const SizedBox(width: 8),
                               Expanded(
                                 child: Text(
                                   result.host,
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontSize: 13,
-                                    color: AppColors.textPrimary,
+                                    color: p.textPrimary,
                                   ),
                                 ),
                               ),
                               Text(
                                 result.summary,
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 12,
-                                  color: AppColors.textSecondary,
+                                  color: p.textSecondary,
                                 ),
                               ),
                             ],
@@ -108,10 +107,10 @@ Future<void> showNetworkDiagnosticsSheet(BuildContext context) {
                 height: 46,
                 child: ElevatedButton(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.cyan,
-                    foregroundColor: Colors.black,
+                    backgroundColor: p.primaryFill,
+                    foregroundColor: p.onPrimary,
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(14),
                     ),
                   ),
                   onPressed: () {

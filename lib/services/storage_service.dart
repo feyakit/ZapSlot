@@ -131,4 +131,131 @@ class StorageService {
     await _prefs.remove(_pendingPortKey);
     await _prefs.remove(_pendingAtKey);
   }
+
+  static const String _reminderStationKey = 'charging_reminder_station';
+  static const String _reminderPortLabelKey = 'charging_reminder_port_label';
+  static const String _reminderAtKey = 'charging_reminder_at';
+  static const String _reminderWatchStationIdKey =
+      'charging_reminder_watch_station_id';
+  static const String _reminderWatchSlotKey = 'charging_reminder_watch_slot';
+
+  ChargingReminderRecord? loadChargingReminder() {
+    final stationName = _prefs.getString(_reminderStationKey);
+    final rawAt = _prefs.getString(_reminderAtKey);
+    if (stationName == null || stationName.isEmpty || rawAt == null) {
+      return null;
+    }
+    final remindAt = DateTime.tryParse(rawAt);
+    if (remindAt == null) return null;
+    return ChargingReminderRecord(
+      stationName: stationName,
+      portLabel: _prefs.getString(_reminderPortLabelKey) ?? '',
+      remindAt: remindAt,
+      watchStationId: _prefs.getString(_reminderWatchStationIdKey),
+      watchSlot: _prefs.getInt(_reminderWatchSlotKey),
+    );
+  }
+
+  Future<void> saveChargingReminder(ChargingReminderRecord record) async {
+    await _prefs.setString(_reminderStationKey, record.stationName);
+    await _prefs.setString(_reminderPortLabelKey, record.portLabel);
+    await _prefs.setString(_reminderAtKey, record.remindAt.toIso8601String());
+    if (record.watchStationId != null && record.watchSlot != null) {
+      await _prefs.setString(
+        _reminderWatchStationIdKey,
+        record.watchStationId!,
+      );
+      await _prefs.setInt(_reminderWatchSlotKey, record.watchSlot!);
+    } else {
+      await _prefs.remove(_reminderWatchStationIdKey);
+      await _prefs.remove(_reminderWatchSlotKey);
+    }
+  }
+
+  Future<void> clearChargingReminder() async {
+    await _prefs.remove(_reminderStationKey);
+    await _prefs.remove(_reminderPortLabelKey);
+    await _prefs.remove(_reminderAtKey);
+    await _prefs.remove(_reminderWatchStationIdKey);
+    await _prefs.remove(_reminderWatchSlotKey);
+  }
+
+  static const String _historyKey = 'charging_history_records';
+
+  List<ChargingHistoryRecord> loadChargingHistory() {
+    final raw = _prefs.getString(_historyKey);
+    if (raw == null || raw.isEmpty) return [];
+    try {
+      final list = jsonDecode(raw) as List<dynamic>;
+      return list
+          .whereType<Map<String, dynamic>>()
+          .map(ChargingHistoryRecord.fromJson)
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  Future<void> saveChargingHistory(List<ChargingHistoryRecord> records) async {
+    final trimmed = records.take(20).toList();
+    await _prefs.setString(
+      _historyKey,
+      jsonEncode(trimmed.map((r) => r.toJson()).toList()),
+    );
+  }
+
+  Future<void> clearChargingHistory() async {
+    await _prefs.remove(_historyKey);
+  }
+}
+
+class ChargingHistoryRecord {
+  const ChargingHistoryRecord({
+    required this.stationId,
+    required this.stationAlias,
+    required this.serialNumber,
+    required this.socketLabel,
+    required this.triggeredAt,
+  });
+
+  final String stationId;
+  final String stationAlias;
+  final String serialNumber;
+  final String socketLabel;
+  final DateTime triggeredAt;
+
+  Map<String, dynamic> toJson() => {
+        'stationId': stationId,
+        'stationAlias': stationAlias,
+        'serialNumber': serialNumber,
+        'socketLabel': socketLabel,
+        'triggeredAt': triggeredAt.toIso8601String(),
+      };
+
+  factory ChargingHistoryRecord.fromJson(Map<String, dynamic> json) {
+    return ChargingHistoryRecord(
+      stationId: json['stationId'] as String? ?? '',
+      stationAlias: json['stationAlias'] as String? ?? '',
+      serialNumber: json['serialNumber'] as String? ?? '',
+      socketLabel: json['socketLabel'] as String? ?? '',
+      triggeredAt: DateTime.tryParse(json['triggeredAt'] as String? ?? '') ??
+          DateTime.now(),
+    );
+  }
+}
+
+class ChargingReminderRecord {
+  const ChargingReminderRecord({
+    required this.stationName,
+    required this.portLabel,
+    required this.remindAt,
+    this.watchStationId,
+    this.watchSlot,
+  });
+
+  final String stationName;
+  final String portLabel;
+  final DateTime remindAt;
+  final String? watchStationId;
+  final int? watchSlot;
 }

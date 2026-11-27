@@ -100,6 +100,10 @@ class UrlRuleEngine {
     final safePort = port.clamp(1, 12);
     final customTemplate = station.customDeepLinkTemplate?.trim();
     final rawUrl = station.rawUrl.trim();
+    final port0Override = (station.gunNums != null &&
+            safePort - 1 < station.gunNums!.length)
+        ? station.gunNums![safePort - 1]
+        : null;
 
     if (customTemplate != null && customTemplate.isNotEmpty) {
       final resolvedCustom = _applyPlaceholders(
@@ -108,6 +112,7 @@ class UrlRuleEngine {
         safePort,
         rawUrl: rawUrl,
         portIndexBase: settings.portIndexBase,
+        port0Override: port0Override,
       );
       final customUri = _parseValidUri(resolvedCustom);
       if (customUri != null) {
@@ -124,6 +129,7 @@ class UrlRuleEngine {
         safePort,
         rawUrl: rawUrl,
         portIndexBase: settings.portIndexBase,
+        port0Override: port0Override,
       );
       if (resolvedGlobal != null) {
         final globalUri = _parseValidUri(resolvedGlobal);
@@ -140,6 +146,7 @@ class UrlRuleEngine {
         safePort,
         rawUrl: rawUrl,
         portIndexBase: settings.portIndexBase,
+        port0Override: port0Override,
       );
       final rawUri = _parseValidUri(resolvedRaw);
       if (rawUri != null) {
@@ -154,6 +161,7 @@ class UrlRuleEngine {
         safePort,
         rawUrl: rawUrl,
         portIndexBase: settings.portIndexBase,
+        port0Override: port0Override,
       );
       return _parseValidUri(fallbackResolved);
     }
@@ -206,6 +214,7 @@ class UrlRuleEngine {
     int port, {
     String rawUrl = '',
     int portIndexBase = 0,
+    String? port0Override,
   }) {
     final lower = template.toLowerCase();
     final usesRawUrl = lower.contains('{raw_url}') ||
@@ -218,7 +227,9 @@ class UrlRuleEngine {
 
     final encodedSn = Uri.encodeComponent(sn.trim().toUpperCase());
     final encodedRaw = Uri.encodeComponent(trimmedRaw);
-    final zeroBasedPort = (port - 1 + portIndexBase).clamp(0, 99).toString();
+    final zeroBasedPort = (port0Override != null && port0Override.isNotEmpty)
+        ? port0Override
+        : (port - 1 + portIndexBase).clamp(0, 99).toString();
 
     String encodedRawWithPort0 = '';
     if (lower.contains('{raw_url_port0_encoded}') && trimmedRaw.isNotEmpty) {

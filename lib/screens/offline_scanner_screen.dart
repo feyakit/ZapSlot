@@ -363,13 +363,15 @@ class _OfflineScannerScreenState extends ConsumerState<OfflineScannerScreen> {
       builder: (sheetContext) {
         return StatefulBuilder(
           builder: (context, setSheetState) {
+            final p = AppTheme.paletteOf(context);
             return SafeArea(
               top: false,
               child: Container(
-                decoration: const BoxDecoration(
-                  color: AppColors.surface,
-                  borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-                  border: Border(top: BorderSide(color: AppColors.border)),
+                decoration: BoxDecoration(
+                  color: p.modalSurface,
+                  borderRadius:
+                      const BorderRadius.vertical(top: Radius.circular(24)),
+                  border: Border(top: BorderSide(color: p.glassBorder)),
                 ),
                 padding: EdgeInsets.only(
                   left: 20,
@@ -390,13 +392,13 @@ class _OfflineScannerScreenState extends ConsumerState<OfflineScannerScreen> {
                               vertical: 4,
                             ),
                             decoration: BoxDecoration(
-                              color: AppColors.emerald.withValues(alpha: 0.16),
+                              color: p.idle.withValues(alpha: 0.16),
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: Text(
                               sourceLabel,
-                              style: const TextStyle(
-                                color: AppColors.emerald,
+                              style: TextStyle(
+                                color: p.idle,
                                 fontSize: 12,
                                 fontWeight: FontWeight.w700,
                               ),
@@ -432,12 +434,12 @@ class _OfflineScannerScreenState extends ConsumerState<OfflineScannerScreen> {
                         ),
                       ),
                       const SizedBox(height: 12),
-                      const Text(
+                      Text(
                         '选择插座编号',
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
-                          color: AppColors.textSecondary,
+                          color: p.textSecondary,
                         ),
                       ),
                       const SizedBox(height: 8),
@@ -459,22 +461,20 @@ class _OfflineScannerScreenState extends ConsumerState<OfflineScannerScreen> {
                                 alignment: Alignment.center,
                                 decoration: BoxDecoration(
                                   color: selected
-                                      ? AppColors.cyan.withValues(alpha: 0.22)
-                                      : AppColors.surfaceElevated,
+                                      ? p.primary.withValues(alpha: 0.16)
+                                      : p.slotBg,
                                   borderRadius: BorderRadius.circular(10),
                                   border: Border.all(
                                     color: selected
-                                        ? AppColors.cyan
-                                        : AppColors.border,
+                                        ? p.primary
+                                        : p.secondaryBorder,
                                   ),
                                 ),
                                 child: Text(
                                   '${settings.socketNumber(port)}',
                                   style: TextStyle(
                                     fontWeight: FontWeight.w800,
-                                    color: selected
-                                        ? AppColors.cyan
-                                        : AppColors.textPrimary,
+                                    color: selected ? p.primary : p.textPrimary,
                                   ),
                                 ),
                               ),
@@ -486,15 +486,15 @@ class _OfflineScannerScreenState extends ConsumerState<OfflineScannerScreen> {
                       Container(
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: AppColors.bg,
+                          color: p.secondaryBg,
                           borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: AppColors.border),
+                          border: Border.all(color: p.secondaryBorder),
                         ),
                         child: Text(
                           '原始地址：$rawUrl',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 12,
-                            color: AppColors.textSecondary,
+                            color: p.textSecondary,
                           ),
                           maxLines: 3,
                           overflow: TextOverflow.ellipsis,
@@ -505,7 +505,7 @@ class _OfflineScannerScreenState extends ConsumerState<OfflineScannerScreen> {
                         CheckboxListTile(
                           value: updateGlobalTemplate,
                           contentPadding: EdgeInsets.zero,
-                          activeColor: AppColors.cyan,
+                          activeColor: p.primary,
                           title: const Text(
                             '同步提取为支付宝直达全局模板',
                             style: TextStyle(fontSize: 14),
@@ -516,9 +516,9 @@ class _OfflineScannerScreenState extends ConsumerState<OfflineScannerScreen> {
                             ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 12,
-                              color: AppColors.textSecondary,
+                              color: p.textSecondary,
                             ),
                           ),
                           onChanged: (v) => setSheetState(
@@ -533,9 +533,9 @@ class _OfflineScannerScreenState extends ConsumerState<OfflineScannerScreen> {
                             child: OutlinedButton(
                               style: OutlinedButton.styleFrom(
                                 minimumSize: const Size.fromHeight(50),
-                                side: const BorderSide(color: AppColors.border),
+                                side: BorderSide(color: p.secondaryBorder),
                                 shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
+                                  borderRadius: BorderRadius.circular(14),
                                 ),
                               ),
                               onPressed: () async {
@@ -574,10 +574,10 @@ class _OfflineScannerScreenState extends ConsumerState<OfflineScannerScreen> {
                             child: ElevatedButton(
                               style: ElevatedButton.styleFrom(
                                 minimumSize: const Size.fromHeight(50),
-                                backgroundColor: AppColors.emerald,
-                                foregroundColor: Colors.black,
+                                backgroundColor: p.primaryFill,
+                                foregroundColor: p.onPrimary,
                                 shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
+                                  borderRadius: BorderRadius.circular(14),
                                 ),
                               ),
                               onPressed: () async {
@@ -650,18 +650,18 @@ class _OfflineScannerScreenState extends ConsumerState<OfflineScannerScreen> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(
+                      Icon(
                         Icons.no_photography_rounded,
                         size: 54,
-                        color: AppColors.amber,
+                        color: AppTheme.paletteOf(context).offline,
                       ),
                       const SizedBox(height: 12),
-                      const Text(
+                      Text(
                         '无法启动相机',
                         style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.w800,
-                          color: AppColors.textPrimary,
+                          color: AppTheme.paletteOf(context).textPrimary,
                         ),
                       ),
                       const SizedBox(height: 6),
@@ -669,19 +669,19 @@ class _OfflineScannerScreenState extends ConsumerState<OfflineScannerScreen> {
                         error.errorDetails?.message ??
                             '请检查相机权限，或返回主页使用“输编号直达”',
                         textAlign: TextAlign.center,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 13,
-                          color: AppColors.textSecondary,
+                          color: AppTheme.paletteOf(context).textSecondary,
                         ),
                       ),
                       const SizedBox(height: 16),
                       ElevatedButton.icon(
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.cyan,
-                          foregroundColor: Colors.black,
+                          backgroundColor: AppTheme.paletteOf(context).primaryFill,
+                          foregroundColor: AppTheme.paletteOf(context).onPrimary,
                           minimumSize: const Size(220, 46),
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
+                            borderRadius: BorderRadius.circular(14),
                           ),
                         ),
                         onPressed: _restartCamera,
@@ -692,20 +692,24 @@ class _OfflineScannerScreenState extends ConsumerState<OfflineScannerScreen> {
                       OutlinedButton.icon(
                         style: OutlinedButton.styleFrom(
                           minimumSize: const Size(220, 46),
-                          side: const BorderSide(color: AppColors.cyan),
+                          side: BorderSide(
+                            color: AppTheme.paletteOf(context).primary,
+                          ),
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
+                            borderRadius: BorderRadius.circular(14),
                           ),
                         ),
                         onPressed: _pickImageAndAnalyze,
-                        icon: const Icon(
+                        icon: Icon(
                           Icons.photo_library_rounded,
                           size: 18,
-                          color: AppColors.cyan,
+                          color: AppTheme.paletteOf(context).primary,
                         ),
-                        label: const Text(
+                        label: Text(
                           '从图库选二维码',
-                          style: TextStyle(color: AppColors.cyan),
+                          style: TextStyle(
+                            color: AppTheme.paletteOf(context).primary,
+                          ),
                         ),
                       ),
                     ],
@@ -733,9 +737,11 @@ class _OfflineScannerScreenState extends ConsumerState<OfflineScannerScreen> {
                       Container(
                         padding: const EdgeInsets.all(4),
                         decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.65),
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(color: AppColors.border),
+                          color: Colors.black.withValues(alpha: 0.55),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.25),
+                          ),
                         ),
                         child: Row(
                           children: [
@@ -760,8 +766,8 @@ class _OfflineScannerScreenState extends ConsumerState<OfflineScannerScreen> {
                       const SizedBox(width: 8),
                       Material(
                         color: _zoomIndex > 0
-                            ? AppColors.cyan.withValues(alpha: 0.9)
-                            : Colors.black.withValues(alpha: 0.65),
+                            ? AppTheme.paletteOf(context).primaryFill
+                            : Colors.black.withValues(alpha: 0.55),
                         shape: const CircleBorder(),
                         child: InkWell(
                           customBorder: const CircleBorder(),
@@ -772,12 +778,10 @@ class _OfflineScannerScreenState extends ConsumerState<OfflineScannerScreen> {
                             child: Center(
                               child: Text(
                                 _zoomLabels[_zoomIndex],
-                                style: TextStyle(
+                                style: const TextStyle(
                                   fontSize: 13,
                                   fontWeight: FontWeight.w800,
-                                  color: _zoomIndex > 0
-                                      ? Colors.black
-                                      : AppColors.textPrimary,
+                                  color: Colors.white,
                                 ),
                               ),
                             ),
@@ -812,15 +816,17 @@ class _OfflineScannerScreenState extends ConsumerState<OfflineScannerScreen> {
                           vertical: 10,
                         ),
                         decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.72),
+                          color: Colors.black.withValues(alpha: 0.65),
                           borderRadius: BorderRadius.circular(14),
-                          border: Border.all(color: AppColors.border),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.25),
+                          ),
                         ),
                         child: Text(
                           _hintText,
                           textAlign: TextAlign.center,
                           style: const TextStyle(
-                            color: AppColors.textPrimary,
+                            color: Colors.white,
                             fontSize: 13,
                             fontWeight: FontWeight.w600,
                           ),
@@ -833,8 +839,10 @@ class _OfflineScannerScreenState extends ConsumerState<OfflineScannerScreen> {
                           height: 50,
                           child: ElevatedButton.icon(
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: AppColors.cyan,
-                              foregroundColor: Colors.black,
+                              backgroundColor:
+                                  AppTheme.paletteOf(context).primaryFill,
+                              foregroundColor:
+                                  AppTheme.paletteOf(context).onPrimary,
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(14),
                               ),
@@ -882,10 +890,11 @@ class _CircleIconButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = AppTheme.paletteOf(context);
     return Material(
       color: active
-          ? AppColors.amber.withValues(alpha: 0.9)
-          : Colors.black.withValues(alpha: 0.65),
+          ? p.offline.withValues(alpha: 0.92)
+          : Colors.black.withValues(alpha: 0.55),
       shape: const CircleBorder(),
       child: InkWell(
         customBorder: const CircleBorder(),
@@ -895,7 +904,7 @@ class _CircleIconButton extends StatelessWidget {
           height: 44,
           child: Icon(
             icon,
-            color: active ? Colors.black : AppColors.textPrimary,
+            color: active ? p.onOffline : Colors.white,
           ),
         ),
       ),
@@ -916,21 +925,22 @@ class _ModeChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = AppTheme.paletteOf(context);
     return GestureDetector(
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 150),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
-          color: selected ? AppColors.cyan : Colors.transparent,
-          borderRadius: BorderRadius.circular(10),
+          color: selected ? p.primaryFill : Colors.transparent,
+          borderRadius: BorderRadius.circular(12),
         ),
         child: Text(
           label,
           style: TextStyle(
             fontSize: 13,
             fontWeight: FontWeight.w800,
-            color: selected ? Colors.black : AppColors.textPrimary,
+            color: selected ? p.onPrimary : Colors.white,
           ),
         ),
       ),
@@ -945,6 +955,7 @@ class _ScannerViewfinderOverlay extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = AppTheme.paletteOf(context);
     final size = mode == ScannerMode.qr ? 250.0 : 290.0;
     final height = mode == ScannerMode.qr ? 250.0 : 120.0;
     return IgnorePointer(
@@ -955,7 +966,7 @@ class _ScannerViewfinderOverlay extends StatelessWidget {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(18),
             border: Border.all(
-              color: mode == ScannerMode.qr ? AppColors.emerald : AppColors.cyan,
+              color: mode == ScannerMode.qr ? p.idle : p.primary,
               width: 2.5,
             ),
             color: Colors.transparent,

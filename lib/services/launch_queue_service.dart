@@ -90,6 +90,8 @@ class LaunchQueueNotifier extends StateNotifier<LaunchQueueState> {
     Stream<InternetStatus>? internetStatusStream,
     Future<void> Function()? onScheduleBackground,
     Future<void> Function()? onCancelBackground,
+    Future<void> Function()? onOnlineConfirmed,
+    Future<void> Function(ChargingStation station, int port)? onLaunchSucceeded,
     bool autoInit = true,
   })  : _storage = storage,
         _notifications = notifications,
@@ -104,6 +106,8 @@ class LaunchQueueNotifier extends StateNotifier<LaunchQueueState> {
             onScheduleBackground ?? BackgroundQueueWorker.schedulePendingRecovery,
         _cancelBackground =
             onCancelBackground ?? BackgroundQueueWorker.cancelPendingRecovery,
+        _onOnlineConfirmed = onOnlineConfirmed,
+        _onLaunchSucceeded = onLaunchSucceeded,
         _internetChecker = checkInternet == null && internetStatusStream == null
             ? InternetConnection.createInstance(
                 checkInterval: const Duration(seconds: 3),
@@ -141,6 +145,9 @@ class LaunchQueueNotifier extends StateNotifier<LaunchQueueState> {
   final Stream<InternetStatus>? _internetStatusStreamOverride;
   final Future<void> Function() _scheduleBackground;
   final Future<void> Function() _cancelBackground;
+  final Future<void> Function()? _onOnlineConfirmed;
+  final Future<void> Function(ChargingStation station, int port)?
+      _onLaunchSucceeded;
   final InternetConnection? _internetChecker;
 
   StreamSubscription<List<ConnectivityResult>>? _connectivitySub;
@@ -345,6 +352,10 @@ class LaunchQueueNotifier extends StateNotifier<LaunchQueueState> {
 
     _syncPendingPollTimer();
 
+    if (!wasOnline && nextIsOnline && _onOnlineConfirmed != null) {
+      unawaited(_onOnlineConfirmed());
+    }
+
     if (triggerRecovery &&
         !wasOnline &&
         nextIsOnline &&
@@ -387,6 +398,7 @@ class LaunchQueueNotifier extends StateNotifier<LaunchQueueState> {
         final launched = await _launchUri(uri);
         if (!mounted) return;
         if (launched) {
+          await _onLaunchSucceeded?.call(station, port);
           await _storage.clearPendingQueue();
           await _cancelBackground();
           await _notifications.cancelRecoveryNotification();
@@ -456,6 +468,7 @@ class LaunchQueueNotifier extends StateNotifier<LaunchQueueState> {
     if (launched) {
       // 拉起成功说明网络与目标 App 都可用，记一次"刚确认在线"，短时间连点走热路径。
       _lastOnlineConfirmedAt = DateTime.now();
+      await _onLaunchSucceeded?.call(station, safePort);
       await _storage.clearPendingQueue();
       await _cancelBackground();
       await _notifications.cancelRecoveryNotification();
@@ -524,6 +537,7 @@ class LaunchQueueNotifier extends StateNotifier<LaunchQueueState> {
     final launched = await _launchUri(uri);
     if (!mounted) return launched;
     if (launched) {
+      await _onLaunchSucceeded?.call(station, port);
       await _storage.clearPendingQueue();
       await _cancelBackground();
       await _notifications.cancelRecoveryNotification();

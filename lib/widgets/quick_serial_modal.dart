@@ -3,7 +3,10 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/app_settings.dart';
+import '../models/charging_station.dart';
 import '../providers/app_providers.dart';
+import '../providers/station_live_provider.dart';
+import '../services/station_lookup_service.dart';
 import '../services/url_rule_engine.dart';
 import '../theme/app_theme.dart';
 
@@ -136,17 +139,29 @@ class _QuickSerialModalState extends ConsumerState<QuickSerialModal> {
     final serial = _currentSerial(prefix);
     final matched =
         stations.where((s) => s.serialNumber == serial).firstOrNull;
+    final matchedLive = matched == null
+        ? null
+        : ref.watch(
+            stationLiveProvider.select((s) => s.byStationId[matched.id]),
+          );
+    final effectivePortCount =
+        matched?.portCount ?? settings.defaultPortCount;
+    final effectivePort = _selectedPort.clamp(1, effectivePortCount);
+    final effectiveLabel = matched != null
+        ? matched.socketLabel(effectivePort, settings.portIndexBase)
+        : settings.socketNumber(effectivePort).toString();
     final isReady = _manualMode
         ? serial.length >= 5
         : _suffixDigits.length == 4;
 
+    final p = AppTheme.paletteOf(context);
     return SafeArea(
       top: false,
       child: Container(
-        decoration: const BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-          border: Border(top: BorderSide(color: AppColors.border)),
+        decoration: BoxDecoration(
+          color: p.modalSurface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(26)),
+          border: Border(top: BorderSide(color: p.glassBorder)),
         ),
         padding: EdgeInsets.only(
           left: 20,
@@ -164,7 +179,7 @@ class _QuickSerialModalState extends ConsumerState<QuickSerialModal> {
                   width: 40,
                   height: 4,
                   decoration: BoxDecoration(
-                    color: AppColors.border,
+                    color: p.secondaryBorder,
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -172,13 +187,13 @@ class _QuickSerialModalState extends ConsumerState<QuickSerialModal> {
               const SizedBox(height: 14),
               Row(
                 children: [
-                  const Expanded(
+                  Expanded(
                     child: Text(
                       '输编号直达',
                       style: TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.w800,
-                        color: AppColors.textPrimary,
+                        color: p.textPrimary,
                       ),
                     ),
                   ),
@@ -194,13 +209,13 @@ class _QuickSerialModalState extends ConsumerState<QuickSerialModal> {
                     icon: Icon(
                       _manualMode
                           ? Icons.dialpad_rounded
-                          : Icons.keyboard_alt_outlined,
+                          : Icons.keyboard_alt_rounded,
                       size: 18,
-                      color: AppColors.cyan,
+                      color: p.primary,
                     ),
                     label: Text(
                       _manualMode ? '切回尾号键盘' : '完整输入',
-                      style: const TextStyle(color: AppColors.cyan),
+                      style: TextStyle(color: p.primary),
                     ),
                   ),
                 ],
@@ -213,10 +228,10 @@ class _QuickSerialModalState extends ConsumerState<QuickSerialModal> {
                     vertical: 14,
                   ),
                   decoration: BoxDecoration(
-                    color: AppColors.bg,
+                    color: p.secondaryBg,
                     borderRadius: BorderRadius.circular(16),
                     border: Border.all(
-                      color: isReady ? AppColors.cyan : AppColors.border,
+                      color: isReady ? p.primary : p.secondaryBorder,
                       width: 1.5,
                     ),
                   ),
@@ -225,11 +240,11 @@ class _QuickSerialModalState extends ConsumerState<QuickSerialModal> {
                     children: [
                       Text(
                         prefix,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontFamily: 'monospace',
                           fontSize: 24,
                           fontWeight: FontWeight.w800,
-                          color: AppColors.textSecondary,
+                          color: p.textSecondary,
                           letterSpacing: 1.5,
                         ),
                       ),
@@ -241,12 +256,12 @@ class _QuickSerialModalState extends ConsumerState<QuickSerialModal> {
                           margin: const EdgeInsets.symmetric(horizontal: 3),
                           alignment: Alignment.center,
                           decoration: BoxDecoration(
-                            color: AppColors.surfaceElevated,
+                            color: p.slotBg,
                             borderRadius: BorderRadius.circular(10),
                             border: Border.all(
                               color: i < _suffixDigits.length
-                                  ? AppColors.cyan
-                                  : AppColors.border,
+                                  ? p.primary
+                                  : p.secondaryBorder,
                             ),
                           ),
                           child: Text(
@@ -256,8 +271,8 @@ class _QuickSerialModalState extends ConsumerState<QuickSerialModal> {
                               fontSize: 24,
                               fontWeight: FontWeight.w900,
                               color: i < _suffixDigits.length
-                                  ? AppColors.cyan
-                                  : AppColors.textSecondary,
+                                  ? p.primary
+                                  : p.textSecondary,
                             ),
                           ),
                         ),
@@ -290,54 +305,62 @@ class _QuickSerialModalState extends ConsumerState<QuickSerialModal> {
                     vertical: 6,
                   ),
                   decoration: BoxDecoration(
-                    color: AppColors.emerald.withValues(alpha: 0.14),
+                    color: p.idle.withValues(alpha: 0.14),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Text(
                     '已匹配保存桩：${matched.alias}（上次 ${settings.socketNumber(matched.lastUsedPort)}号口）',
-                    style: const TextStyle(
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
-                      color: AppColors.emerald,
+                      color: p.idle,
                     ),
                   ),
                 ),
               ],
               const SizedBox(height: 14),
-              const Text(
+              Text(
                 '插座编号',
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
-                  color: AppColors.textSecondary,
+                  color: p.textSecondary,
                 ),
               ),
               const SizedBox(height: 8),
-              _buildSocketGrid(settings),
+              _buildSocketGrid(
+                p,
+                settings,
+                matched: matched,
+                liveInfo: matchedLive,
+                portCount: effectivePortCount,
+                selectedPort: effectivePort,
+              ),
               if (!_manualMode) ...[
                 const SizedBox(height: 16),
-                _buildKeypad(prefix),
+                _buildKeypad(p, prefix),
               ],
               const SizedBox(height: 16),
               SizedBox(
                 height: 54,
                 child: ElevatedButton.icon(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor:
-                        isOnline ? AppColors.emerald : AppColors.amber,
-                    foregroundColor: Colors.black,
+                    backgroundColor: isOnline ? p.primaryFill : p.offline,
+                    foregroundColor: isOnline ? p.onPrimary : p.onOffline,
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
+                      borderRadius: BorderRadius.circular(16),
                     ),
                   ),
                   onPressed: (isReady && !_isSubmitting) ? _submit : null,
                   icon: _isSubmitting
-                      ? const SizedBox(
+                      ? SizedBox(
                           width: 18,
                           height: 18,
                           child: CircularProgressIndicator(
                             strokeWidth: 2.2,
-                            color: Colors.black,
+                            color: isOnline ? p.onPrimary : p.onOffline,
                           ),
                         )
                       : Icon(
@@ -349,8 +372,10 @@ class _QuickSerialModalState extends ConsumerState<QuickSerialModal> {
                     _isSubmitting
                         ? '正在检测信号...'
                         : (isOnline
-                            ? '立即直达 · ${settings.socketNumber(_selectedPort)}号口'
-                            : '加入离线排队 · ${settings.socketNumber(_selectedPort)}号口'),
+                            ? '立即直达 · $effectiveLabel号口'
+                            : '加入离线排队 · $effectiveLabel号口'),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w800,
@@ -365,10 +390,17 @@ class _QuickSerialModalState extends ConsumerState<QuickSerialModal> {
     );
   }
 
-  Widget _buildSocketGrid(AppSettings settings) {
+  Widget _buildSocketGrid(
+    ZapPalette p,
+    AppSettings settings, {
+    required ChargingStation? matched,
+    required StationLiveInfo? liveInfo,
+    required int portCount,
+    required int selectedPort,
+  }) {
     const columns = 5;
-    final portCount = settings.defaultPortCount;
     final rowCount = (portCount + columns - 1) ~/ columns;
+    final gunStatuses = liveInfo?.gunStatuses;
 
     return Column(
       children: List.generate(rowCount, (rowIndex) {
@@ -380,7 +412,17 @@ class _QuickSerialModalState extends ConsumerState<QuickSerialModal> {
               if (port > portCount) {
                 return const Expanded(child: SizedBox.shrink());
               }
-              final selected = port == _selectedPort;
+              final selected = port == selectedPort;
+              final gunStatus = gunStatuses?[port];
+              final dotColor = switch (gunStatus) {
+                GunWorkStatus.idle => p.idle,
+                GunWorkStatus.busy => p.busy,
+                GunWorkStatus.fault => p.danger,
+                _ => null,
+              };
+              final label = matched != null
+                  ? matched.socketLabel(port, settings.portIndexBase)
+                  : '${settings.socketNumber(port)}';
               return Expanded(
                 child: Padding(
                   padding: EdgeInsets.only(
@@ -400,23 +442,40 @@ class _QuickSerialModalState extends ConsumerState<QuickSerialModal> {
                       alignment: Alignment.center,
                       decoration: BoxDecoration(
                         color: selected
-                            ? AppColors.cyan.withValues(alpha: 0.2)
-                            : AppColors.surfaceElevated,
+                            ? p.primary.withValues(alpha: 0.16)
+                            : p.slotBg,
                         borderRadius: BorderRadius.circular(10),
                         border: Border.all(
-                          color: selected ? AppColors.cyan : AppColors.border,
+                          color: selected ? p.primary : p.secondaryBorder,
                           width: selected ? 1.6 : 1,
                         ),
                       ),
-                      child: Text(
-                        '${settings.socketNumber(port)}',
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w800,
-                          color: selected
-                              ? AppColors.cyan
-                              : AppColors.textPrimary,
-                        ),
+                      child: Stack(
+                        children: [
+                          Center(
+                            child: Text(
+                              label,
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w800,
+                                color: selected ? p.primary : p.textPrimary,
+                              ),
+                            ),
+                          ),
+                          if (dotColor != null)
+                            Positioned(
+                              top: 4,
+                              right: 5,
+                              child: Container(
+                                width: 6,
+                                height: 6,
+                                decoration: BoxDecoration(
+                                  color: dotColor,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
                     ),
                   ),
@@ -429,7 +488,7 @@ class _QuickSerialModalState extends ConsumerState<QuickSerialModal> {
     );
   }
 
-  Widget _buildKeypad(String prefix) {
+  Widget _buildKeypad(ZapPalette p, String prefix) {
     const rows = [
       ['1', '2', '3'],
       ['4', '5', '6'],
@@ -449,7 +508,7 @@ class _QuickSerialModalState extends ConsumerState<QuickSerialModal> {
                   child: SizedBox(
                     height: 52,
                     child: Material(
-                      color: AppColors.surfaceElevated,
+                      color: p.secondaryBg,
                       borderRadius: BorderRadius.circular(12),
                       child: InkWell(
                         borderRadius: BorderRadius.circular(12),
@@ -468,9 +527,9 @@ class _QuickSerialModalState extends ConsumerState<QuickSerialModal> {
                         },
                         child: Center(
                           child: key == '退格'
-                              ? const Icon(
-                                  Icons.backspace_outlined,
-                                  color: AppColors.textPrimary,
+                              ? Icon(
+                                  Icons.backspace_rounded,
+                                  color: p.textPrimary,
                                   size: 20,
                                 )
                               : Text(
@@ -479,8 +538,8 @@ class _QuickSerialModalState extends ConsumerState<QuickSerialModal> {
                                     fontSize: key == '清空' ? 15 : 22,
                                     fontWeight: FontWeight.w700,
                                     color: key == '清空'
-                                        ? AppColors.textSecondary
-                                        : AppColors.textPrimary,
+                                        ? p.textSecondary
+                                        : p.textPrimary,
                                   ),
                                 ),
                         ),

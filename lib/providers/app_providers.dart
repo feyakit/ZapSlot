@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
@@ -6,7 +8,9 @@ import '../models/app_settings.dart';
 import '../models/charging_station.dart';
 import '../services/launch_queue_service.dart';
 import '../services/notification_service.dart';
+import '../services/station_lookup_service.dart';
 import '../services/storage_service.dart';
+import 'charging_history_provider.dart';
 
 /// 在 main.dart 中通过 ProviderScope overrides 注入已初始化实例
 final sharedPreferencesProvider = Provider<SharedPreferences>((ref) {
@@ -24,17 +28,25 @@ final storageServiceProvider = Provider<StorageService>((ref) {
 
 /// 充电桩列表状态管理
 class StationsNotifier extends StateNotifier<List<ChargingStation>> {
-  StationsNotifier(this._storage, List<ChargingStation> initialStations)
-      : super(initialStations);
+  StationsNotifier(
+    this._storage,
+    List<ChargingStation> initialStations, {
+    Future<StationLocationInfo?> Function(String serialNumber)? fetchLocation,
+  })  : _fetchLocation = fetchLocation ?? StationLookupService.fetchStationInfo,
+        super(initialStations);
 
   final StorageService _storage;
+  final Future<StationLocationInfo?> Function(String serialNumber)
+      _fetchLocation;
   static const Uuid _uuid = Uuid();
+  bool _isAutoFillingAddresses = false;
 
   Future<ChargingStation> upsertStation({
     String? id,
     required String alias,
     required String serialNumber,
     required String rawUrl,
+    String? address,
     String? customDeepLinkTemplate,
     bool preserveCustomTemplateIfNull = false,
     int lastUsedPort = 1,
@@ -42,6 +54,7 @@ class StationsNotifier extends StateNotifier<List<ChargingStation>> {
     final normalizedSn = serialNumber.trim().toUpperCase();
     final trimmedAlias = alias.trim().isEmpty ? normalizedSn : alias.trim();
     final trimmedRaw = rawUrl.trim();
+    final trimmedAddress = address?.trim();
     final trimmedCustom = customDeepLinkTemplate?.trim();
     final now = DateTime.now();
 
@@ -60,6 +73,9 @@ class StationsNotifier extends StateNotifier<List<ChargingStation>> {
         alias: trimmedAlias,
         serialNumber: normalizedSn,
         rawUrl: trimmedRaw.isNotEmpty ? trimmedRaw : current.rawUrl,
+        address: (trimmedAddress != null && trimmedAddress.isNotEmpty)
+            ? trimmedAddress
+            : current.address,
         customDeepLinkTemplate: hasProvidedCustom ? trimmedCustom : null,
         clearCustomDeepLinkTemplate: shouldClearCustom,
         lastUsedPort: lastUsedPort,
@@ -77,6 +93,9 @@ class StationsNotifier extends StateNotifier<List<ChargingStation>> {
         alias: trimmedAlias,
         serialNumber: normalizedSn,
         rawUrl: trimmedRaw,
+        address: (trimmedAddress != null && trimmedAddress.isNotEmpty)
+            ? trimmedAddress
+            : null,
         customDeepLinkTemplate:
             (trimmedCustom != null && trimmedCustom.isNotEmpty)
                 ? trimmedCustom
@@ -88,6 +107,13 @@ class StationsNotifier extends StateNotifier<List<ChargingStation>> {
     }
 
     await _storage.saveStations(state);
+    if (saved.address == null ||
+        StationLookupService.isDefaultPlaceholderAlias(
+          saved.alias,
+          saved.serialNumber,
+        )) {
+      unawaited(enrichStationAddress(saved.id));
+    }
     return saved;
   }
 
@@ -101,6 +127,144 @@ class StationsNotifier extends StateNotifier<List<ChargingStation>> {
     );
     state = updatedList;
     await _storage.saveStations(state);
+  }
+
+  Future<void> renameStation(
+    String stationId,
+    String newAlias, {
+    String? address,
+  }) async {
+    final index = state.indexWhere((s) => s.id == stationId);
+    if (index < 0) return;
+    final current = state[index];
+    final trimmed = newAlias.trim();
+    final finalAlias = trimmed.isEmpty ? current.serialNumber : trimmed;
+    final nextAddress = (address != null && address.trim().isNotEmpty)
+        ? address.trim()
+        : current.address;
+    if (finalAlias == current.alias && nextAddress == current.address) return;
+
+    final updatedList = [...state];
+    updatedList[index] = current.copyWith(
+      alias: finalAlias,
+      address: nextAddress,
+    );
+    state = updatedList;
+    await _storage.saveStations(state);
+  }
+
+  Future<void> syncLiveMetadata(
+    String stationId, {
+    int? portCount,
+    List<String>? gunNums,
+    StationLocationInfo? locationInfo,
+  }) async {
+    final index = state.indexWhere((s) => s.id == stationId);
+    if (index < 0) return;
+    final current = state[index];
+
+    final nextPortCount = (portCount != null && portCount >= 1 && portCount <= 12)
+        ? portCount
+        : current.portCount;
+    final nextGunNums = (gunNums != null && gunNums.isNotEmpty)
+        ? gunNums
+        : current.gunNums;
+    final shouldReplaceAlias = locationInfo != null &&
+        StationLookupService.isDefaultPlaceholderAlias(
+          current.alias,
+          current.serialNumber,
+        );
+    final nextAlias = shouldReplaceAlias ? locationInfo.displayName : current.alias;
+    final nextAddress = (current.address == null && locationInfo != null)
+        ? locationInfo.fullAddress
+        : current.address;
+
+    final gunNumsChanged = nextGunNums != null &&
+        (current.gunNums == null ||
+            current.gunNums!.length != nextGunNums.length ||
+            Iterable.generate(
+              nextGunNums.length,
+              (i) => nextGunNums[i] != current.gunNums![i],
+            ).any((diff) => diff));
+
+    if (nextPortCount == current.portCount &&
+        !gunNumsChanged &&
+        nextAlias == current.alias &&
+        nextAddress == current.address) {
+      return;
+    }
+
+    final updatedList = [...state];
+    updatedList[index] = current.copyWith(
+      alias: nextAlias,
+      address: nextAddress,
+      portCount: nextPortCount,
+      gunNums: nextGunNums,
+    );
+    state = updatedList;
+    await _storage.saveStations(state);
+  }
+
+  /// 查询单台桩的云端位置并原地补全 `address`；若当前别名仍是默认占位名，同步更新 `alias`。
+  Future<StationLocationInfo?> enrichStationAddress(String stationId) async {
+    final index = state.indexWhere((s) => s.id == stationId);
+    if (index < 0) return null;
+    final current = state[index];
+
+    final info = await _fetchLocation(current.serialNumber);
+    if (info == null || !mounted) return info;
+
+    final latestIndex = state.indexWhere((s) => s.id == stationId);
+    if (latestIndex < 0) return info;
+    final latest = state[latestIndex];
+
+    final shouldReplaceAlias = StationLookupService.isDefaultPlaceholderAlias(
+      latest.alias,
+      latest.serialNumber,
+    );
+    final nextAlias = shouldReplaceAlias ? info.displayName : latest.alias;
+    final nextAddress = info.fullAddress;
+
+    if (nextAlias == latest.alias && nextAddress == latest.address) {
+      return info;
+    }
+
+    final updatedList = [...state];
+    updatedList[latestIndex] = latest.copyWith(
+      alias: nextAlias,
+      address: nextAddress,
+    );
+    state = updatedList;
+    await _storage.saveStations(state);
+    return info;
+  }
+
+  /// 联网后静默补全所有缺少地址（或仍为默认占位名）的充电桩，绝不覆盖用户手动改过的名称。
+  Future<void> autoFillMissingAddresses() async {
+    if (_isAutoFillingAddresses || !mounted) return;
+    final targets = state
+        .where(
+          (s) =>
+              s.address == null ||
+              s.address!.trim().isEmpty ||
+              StationLookupService.isDefaultPlaceholderAlias(
+                s.alias,
+                s.serialNumber,
+              ),
+        )
+        .map((s) => s.id)
+        .toList();
+    if (targets.isEmpty) return;
+
+    _isAutoFillingAddresses = true;
+    try {
+      for (final id in targets) {
+        if (!mounted) break;
+        await enrichStationAddress(id);
+      }
+    } finally {
+      _isAutoFillingAddresses = false;
+    }
   }
 
   /// 扫码 / OCR 静默入库：
@@ -139,6 +303,16 @@ class StationsNotifier extends StateNotifier<List<ChargingStation>> {
     );
   }
 
+  Future<void> pinStationToTop(String stationId) async {
+    final index = state.indexWhere((s) => s.id == stationId);
+    if (index <= 0) return;
+    final next = [...state];
+    final target = next.removeAt(index);
+    next.insert(0, target);
+    state = next;
+    await _storage.saveStations(state);
+  }
+
   Future<void> deleteStation(String stationId) async {
     state = state.where((s) => s.id != stationId).toList();
     await _storage.saveStations(state);
@@ -172,6 +346,11 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     if (trimmed.isEmpty) return;
     await updateSettings(state.copyWith(globalUrlTemplate: trimmed));
   }
+
+  Future<void> updateThemePreference(AppThemePreference preference) async {
+    if (state.themePreference == preference) return;
+    await updateSettings(state.copyWith(themePreference: preference));
+  }
 }
 
 final settingsProvider =
@@ -192,6 +371,14 @@ final launchQueueProvider =
     readSettings: () => ref.read(settingsProvider),
     onStationUsed: (stationId, port) =>
         ref.read(stationsProvider.notifier).updateLastUsedPort(stationId, port),
+    onOnlineConfirmed: () =>
+        ref.read(stationsProvider.notifier).autoFillMissingAddresses(),
+    onLaunchSucceeded: (station, port) =>
+        ref.read(chargingHistoryProvider.notifier).recordLaunch(
+              station: station,
+              socketLabel:
+                  station.socketLabel(port, ref.read(settingsProvider).portIndexBase),
+            ),
   );
 
   ref.listen<List<ChargingStation>>(stationsProvider, (_, next) {

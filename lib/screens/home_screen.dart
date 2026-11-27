@@ -1,23 +1,39 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../models/charging_station.dart';
 import '../providers/app_providers.dart';
+import '../providers/charging_reminder_provider.dart';
+import '../providers/station_live_provider.dart';
+import '../services/station_lookup_service.dart';
 import '../services/url_rule_engine.dart';
 import '../theme/app_theme.dart';
 import '../widgets/network_diagnostics_sheet.dart';
 import '../widgets/quick_serial_modal.dart';
 import '../widgets/station_card.dart';
+import 'footprint_tab.dart';
 import 'offline_scanner_screen.dart';
 import 'rule_settings_screen.dart';
 
-/// 主面板：实时网络状态胶囊、排队横幅、常用桩大卡片与单手底部操作栏。
-class HomeScreen extends ConsumerWidget {
+/// 主面板：全透明液态玻璃 + 底部三栏悬浮导航（充电 / 足迹 / 设置）。
+class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends ConsumerState<HomeScreen> {
+  int _currentIndex = 0;
+  String? _expandedStationId;
+  bool _didInitExpanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = AppTheme.paletteOf(context);
+
     ref.listen<String?>(
       launchQueueProvider.select((s) => s.statusMessage),
       (prev, msg) {
@@ -29,6 +45,111 @@ class HomeScreen extends ConsumerWidget {
       },
     );
 
+    final hasReminder =
+        ref.watch(chargingReminderProvider.select((r) => r != null));
+    final hasPendingTask =
+        ref.watch(launchQueueProvider.select((s) => s.hasPendingTask));
+
+    return ZapAuroraBackdrop(
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        extendBody: true,
+        body: IndexedStack(
+          index: _currentIndex,
+          children: [
+            _buildChargeTab(context),
+            FootprintTab(
+              onOpenMiniProgram: () => _openLaiChongMiniProgram(context),
+            ),
+            const RuleSettingsScreen(embedded: true),
+          ],
+        ),
+        bottomNavigationBar: SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
+            child: ZapGlassCard(
+              borderRadius: 28,
+              blurSigma: 28,
+              borderColor: p.navBorder,
+              backgroundColors: [p.navGlass, p.navGlass],
+              child: NavigationBar(
+                height: 62,
+                backgroundColor: Colors.transparent,
+                surfaceTintColor: Colors.transparent,
+                shadowColor: Colors.transparent,
+                indicatorColor: p.primary.withValues(alpha: 0.16),
+                selectedIndex: _currentIndex,
+                onDestinationSelected: (index) {
+                  HapticFeedback.selectionClick();
+                  setState(() => _currentIndex = index);
+                },
+                labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+                destinations: [
+                  NavigationDestination(
+                    icon: Badge(
+                      isLabelVisible: hasPendingTask,
+                      backgroundColor: p.offline,
+                      smallSize: 7,
+                      child: Icon(
+                        Icons.ev_station_rounded,
+                        color: p.textSecondary,
+                      ),
+                    ),
+                    selectedIcon: Badge(
+                      isLabelVisible: hasPendingTask,
+                      backgroundColor: p.offline,
+                      smallSize: 7,
+                      child: Icon(
+                        Icons.ev_station_rounded,
+                        color: p.primary,
+                      ),
+                    ),
+                    label: '充电',
+                  ),
+                  NavigationDestination(
+                    icon: Badge(
+                      isLabelVisible: hasReminder,
+                      backgroundColor: p.primary,
+                      smallSize: 7,
+                      child: Icon(
+                        Icons.receipt_long_rounded,
+                        color: p.textSecondary,
+                      ),
+                    ),
+                    selectedIcon: Badge(
+                      isLabelVisible: hasReminder,
+                      backgroundColor: p.primary,
+                      smallSize: 7,
+                      child: Icon(
+                        Icons.receipt_long_rounded,
+                        color: p.primary,
+                      ),
+                    ),
+                    label: '足迹',
+                  ),
+                  NavigationDestination(
+                    icon: Icon(
+                      Icons.tune_rounded,
+                      color: p.textSecondary,
+                    ),
+                    selectedIcon: Icon(
+                      Icons.tune_rounded,
+                      color: p.primary,
+                    ),
+                    label: '设置',
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildChargeTab(BuildContext context) {
+    final p = AppTheme.paletteOf(context);
     final stations = ref.watch(stationsProvider);
     final settings = ref.watch(settingsProvider);
     final isOnline = ref.watch(launchQueueProvider.select((s) => s.isOnline));
@@ -38,27 +159,61 @@ class HomeScreen extends ConsumerWidget {
         ref.watch(launchQueueProvider.select((s) => s.pendingStation?.id));
     final pendingPort =
         ref.watch(launchQueueProvider.select((s) => s.pendingPort));
+    final reminder = ref.watch(chargingReminderProvider);
 
-    return Scaffold(
-      body: SafeArea(
-        child: Column(
-          children: [
-            _buildTopHeader(context, ref),
-            if (hasPendingTask) _buildActiveQueueBanner(context, ref),
-            Expanded(
-              child: stations.isEmpty
-                  ? _buildEmptyState(context)
-                  : ListView.separated(
-                      padding: const EdgeInsets.fromLTRB(16, 10, 16, 20),
+    if (stations.isNotEmpty) {
+      if (!_didInitExpanded) {
+        _expandedStationId = stations.first.id;
+        _didInitExpanded = true;
+      } else if (_expandedStationId != null &&
+          stations.every((s) => s.id != _expandedStationId)) {
+        _expandedStationId = stations.first.id;
+      }
+    }
+
+    return SafeArea(
+      bottom: false,
+      child: Column(
+        children: [
+          _buildTopHeader(context),
+          _buildQuickActionStrip(context),
+          if (hasPendingTask) _buildActiveQueueBanner(context),
+          if (reminder != null) _buildReminderBanner(context, reminder),
+          Expanded(
+            child: stations.isEmpty
+                ? _buildEmptyState(context)
+                : RefreshIndicator(
+                    color: p.primary,
+                    backgroundColor: p.modalSurface,
+                    onRefresh: () async {
+                      await ref
+                          .read(launchQueueProvider.notifier)
+                          .refreshNetworkStatus();
+                      await ref
+                          .read(stationLiveProvider.notifier)
+                          .refreshAll();
+                    },
+                    child: ListView.separated(
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
                       itemCount: stations.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 14),
+                      separatorBuilder: (_, __) => const SizedBox(height: 12),
                       itemBuilder: (context, index) {
                         final station = stations[index];
                         final isQueuedHere = pendingStationId == station.id;
+                        final liveInfo = ref.watch(
+                          stationLiveProvider
+                              .select((s) => s.byStationId[station.id]),
+                        );
+                        final isRefreshing = ref.watch(
+                          stationLiveProvider.select(
+                            (s) => s.refreshingIds.contains(station.id),
+                          ),
+                        );
                         return StationCard(
                           key: ValueKey(station.id),
                           station: station,
-                          portCount: settings.defaultPortCount,
+                          portCount:
+                              station.portCount ?? settings.defaultPortCount,
                           isOnline: isOnline,
                           isQueuedHere: isQueuedHere,
                           queuedPort: isQueuedHere ? pendingPort : null,
@@ -67,6 +222,35 @@ class HomeScreen extends ConsumerWidget {
                             settings,
                           ),
                           portIndexBase: settings.portIndexBase,
+                          liveInfo: liveInfo,
+                          isRefreshing: isRefreshing,
+                          isFirst: index == 0,
+                          isExpanded: station.id == _expandedStationId,
+                          onToggleExpand: () {
+                            setState(() {
+                              _expandedStationId =
+                                  _expandedStationId == station.id
+                                      ? null
+                                      : station.id;
+                            });
+                          },
+                          onRefreshLive: () => ref
+                              .read(stationLiveProvider.notifier)
+                              .refreshStation(station.id),
+                          onPinToTop: () {
+                            setState(() => _expandedStationId = station.id);
+                            ref
+                                .read(stationsProvider.notifier)
+                                .pinStationToTop(station.id);
+                          },
+                          onScheduleReminder: (port) => _showReminderPicker(
+                            context,
+                            station,
+                            port,
+                            station.socketLabel(port, settings.portIndexBase),
+                          ),
+                          onOpenMiniProgram: () =>
+                              _openLaiChongMiniProgram(context),
                           onTrigger: (port) async {
                             await ref
                                 .read(launchQueueProvider.notifier)
@@ -102,33 +286,78 @@ class HomeScreen extends ConsumerWidget {
                           },
                           onEdit: () => _showStationEditor(
                             context,
-                            ref,
                             existing: station,
+                          ),
+                          onRename: () => _showQuickRenameDialog(
+                            context,
+                            station,
                           ),
                           onDelete: () => _confirmDelete(
                             context,
-                            ref,
                             station,
                           ),
                         );
                       },
                     ),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildQuickActionStrip(BuildContext context) {
+    final p = AppTheme.paletteOf(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 2, 16, 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: _QuickActionChip(
+              icon: Icons.qr_code_scanner_rounded,
+              label: '离线扫新桩',
+              color: p.primaryFill,
+              textColor: p.onPrimary,
+              filled: true,
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const OfflineScannerScreen(),
+                  ),
+                );
+              },
             ),
-            _buildBottomActionBar(context, ref),
-          ],
-        ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: _QuickActionChip(
+              icon: Icons.dialpad_rounded,
+              label: '输编号直达',
+              color: p.primary,
+              textColor: p.textPrimary,
+              onTap: () {
+                showModalBottomSheet<void>(
+                  context: context,
+                  isScrollControlled: true,
+                  backgroundColor: Colors.transparent,
+                  builder: (_) => const QuickSerialModal(),
+                );
+              },
+            ),
+          ),
+        ],
       ),
     );
   }
 
   Widget _buildTopHeader(
     BuildContext context,
-    WidgetRef ref,
   ) {
+    final p = AppTheme.paletteOf(context);
     final isOnline = ref.watch(launchQueueProvider.select((s) => s.isOnline));
     final isChecking =
         ref.watch(launchQueueProvider.select((s) => s.isChecking));
-    final badgeColor = isOnline ? AppColors.emerald : AppColors.amber;
+    final badgeColor = isOnline ? p.idle : p.offline;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
@@ -148,24 +377,24 @@ class HomeScreen extends ConsumerWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                Text(
                   '闪雀',
                   style: TextStyle(
-                    fontSize: 24,
+                    fontSize: 22,
                     fontWeight: FontWeight.w900,
-                    color: AppColors.textPrimary,
-                    letterSpacing: 0.5,
+                    color: p.textPrimary,
+                    letterSpacing: 0.4,
                   ),
                 ),
-                const SizedBox(height: 2),
+                const SizedBox(height: 1),
                 Text(
-                  isOnline
-                      ? '外网已畅通 · 点击即可直达支付宝选套餐'
-                      : '地库无网可用 · 点选插座可先排队',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: AppColors.textSecondary,
+                  isOnline ? '外网已畅通 · 点卡展开选口' : '地库无网可用 · 点选插座可先排队',
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    color: p.textSecondary,
                   ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),
@@ -176,17 +405,13 @@ class HomeScreen extends ConsumerWidget {
               HapticFeedback.selectionClick();
               ref.read(launchQueueProvider.notifier).refreshNetworkStatus();
             },
-            onLongPress: () => _showNetworkDiagnostics(context, ref),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: badgeColor.withValues(alpha: 0.16),
-                borderRadius: BorderRadius.circular(24),
-                border: Border.all(
-                  color: badgeColor.withValues(alpha: 0.7),
-                  width: 1.2,
-                ),
-              ),
+            onLongPress: () => _showNetworkDiagnostics(context),
+            child: ZapGlassCard(
+              borderRadius: 24,
+              blurSigma: 16,
+              borderColor: p.secondaryBorder,
+              backgroundColors: [p.secondaryBg, p.secondaryBg],
+              padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -196,30 +421,47 @@ class HomeScreen extends ConsumerWidget {
                     decoration: BoxDecoration(
                       color: badgeColor,
                       shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: badgeColor.withValues(alpha: 0.45),
+                          blurRadius: 6,
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(width: 7),
+                  const SizedBox(width: 6),
                   Text(
                     isChecking
-                        ? '检测信号中...'
-                        : (isOnline ? '网络已就绪' : '地库离线模式'),
+                        ? '检测中...'
+                        : (isOnline ? '网络就绪' : '地库离线'),
                     style: TextStyle(
-                      fontSize: 13,
+                      fontSize: 12.5,
                       fontWeight: FontWeight.w800,
-                      color: badgeColor,
+                      color: p.textPrimary,
                     ),
                   ),
                 ],
               ),
             ),
           ),
-          const SizedBox(width: 4),
-          IconButton(
-            tooltip: '手动新增桩',
-            onPressed: () => _showStationEditor(context, ref),
-            icon: const Icon(
-              Icons.add_circle_outline_rounded,
-              color: AppColors.textSecondary,
+          const SizedBox(width: 6),
+          InkWell(
+            borderRadius: BorderRadius.circular(20),
+            onTap: () => _showStationEditor(context),
+            child: ZapGlassCard(
+              borderRadius: 18,
+              blurSigma: 16,
+              borderColor: p.secondaryBorder,
+              backgroundColors: [p.secondaryBg, p.secondaryBg],
+              child: SizedBox(
+                width: 34,
+                height: 34,
+                child: Icon(
+                  Icons.add_rounded,
+                  size: 20,
+                  color: p.textPrimary,
+                ),
+              ),
             ),
           ),
         ],
@@ -228,14 +470,12 @@ class HomeScreen extends ConsumerWidget {
   }
 
   /// 长按网络胶囊：现场排查"有信号却提示离线"。
-  Future<void> _showNetworkDiagnostics(BuildContext context, WidgetRef ref) async {
+  Future<void> _showNetworkDiagnostics(BuildContext context) async {
     await showNetworkDiagnosticsSheet(context);
   }
 
-  Widget _buildActiveQueueBanner(
-    BuildContext context,
-    WidgetRef ref,
-  ) {
+  Widget _buildActiveQueueBanner(BuildContext context) {
+    final p = AppTheme.paletteOf(context);
     final station =
         ref.watch(launchQueueProvider.select((s) => s.pendingStation));
     final port = ref.watch(launchQueueProvider.select((s) => s.pendingPort));
@@ -245,78 +485,77 @@ class HomeScreen extends ConsumerWidget {
     if (station == null || port == null) return const SizedBox.shrink();
 
     final displayPort = settings.socketNumber(port);
+    final accent = isOnline ? p.idle : p.offline;
 
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: isOnline ? AppColors.emeraldDark : AppColors.amberDark,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: isOnline ? AppColors.emerald : AppColors.amber,
-          width: 1.4,
-        ),
-      ),
-      child: Row(
-        children: [
-          Icon(
-            isOnline ? Icons.notifications_active_rounded : Icons.wifi_off_rounded,
-            color: isOnline ? AppColors.emerald : AppColors.amber,
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  isOnline
-                      ? '信号已恢复 · 准备直达 ${station.serialNumber}'
-                      : '离线排队中 · 出电梯有网自动唤起',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w800,
-                    color: isOnline ? AppColors.emerald : AppColors.amber,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  '${station.alias} · $displayPort号插座${_formatQueuedElapsed(queuedAt)}',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-              ],
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+      child: ZapGlassCard(
+        borderRadius: 18,
+        borderColor: accent.withValues(alpha: 0.7),
+        padding: const EdgeInsets.all(14),
+        child: Row(
+          children: [
+            Icon(
+              isOnline
+                  ? Icons.notifications_active_rounded
+                  : Icons.wifi_off_rounded,
+              color: accent,
             ),
-          ),
-          if (isOnline)
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    isOnline
+                        ? '信号已恢复 · 准备直达 ${station.serialNumber}'
+                        : '离线排队中 · 出电梯有网自动唤起',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                      color: accent,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '${station.alias} · $displayPort号插座${_formatQueuedElapsed(queuedAt)}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: p.textPrimary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (isOnline)
+              TextButton(
+                onPressed: () {
+                  HapticFeedback.mediumImpact();
+                  ref.read(launchQueueProvider.notifier).retryPendingNow();
+                },
+                child: Text(
+                  '立即唤醒',
+                  style: TextStyle(
+                    color: p.primary,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
             TextButton(
               onPressed: () {
-                HapticFeedback.mediumImpact();
-                ref.read(launchQueueProvider.notifier).retryPendingNow();
+                HapticFeedback.selectionClick();
+                ref.read(launchQueueProvider.notifier).cancelQueue();
               },
-              child: const Text(
-                '立即唤醒',
+              child: Text(
+                '取消排队',
                 style: TextStyle(
-                  color: AppColors.emerald,
-                  fontWeight: FontWeight.w800,
+                  color: p.textSecondary,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
             ),
-          TextButton(
-            onPressed: () {
-              HapticFeedback.selectionClick();
-              ref.read(launchQueueProvider.notifier).cancelQueue();
-            },
-            child: const Text(
-              '取消排队',
-              style: TextStyle(
-                color: AppColors.textPrimary,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -330,104 +569,45 @@ class HomeScreen extends ConsumerWidget {
   }
 
   Widget _buildEmptyState(BuildContext context) {
-    return const Center(
+    final p = AppTheme.paletteOf(context);
+    return Center(
       child: Padding(
-        padding: EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.ev_station_rounded,
-              size: 64,
-              color: AppColors.textSecondary,
-            ),
-            SizedBox(height: 14),
-            Text(
-              '还没有保存的充电桩',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-                color: AppColors.textPrimary,
+        padding: const EdgeInsets.all(32),
+        child: ZapGlassCard(
+          borderRadius: 24,
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.ev_station_rounded,
+                size: 56,
+                color: p.primary,
               ),
-            ),
-            SizedBox(height: 6),
-            Text(
-              '点击下方“离线扫新桩”或“输编号直达”即可开始使用',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: AppColors.textSecondary),
-            ),
-          ],
+              const SizedBox(height: 14),
+              Text(
+                '还没有保存的充电桩',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                  color: p.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                '点击上方“离线扫新桩”或“输编号直达”即可开始使用',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: p.textSecondary),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildBottomActionBar(BuildContext context, WidgetRef ref) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
-      decoration: const BoxDecoration(
-        color: AppColors.surface,
-        border: Border(top: BorderSide(color: AppColors.border)),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            flex: 4,
-            child: _BottomBarButton(
-              icon: Icons.qr_code_scanner_rounded,
-              label: '离线扫新桩',
-              color: AppColors.emerald,
-              filled: true,
-              onTap: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => const OfflineScannerScreen(),
-                  ),
-                );
-              },
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            flex: 4,
-            child: _BottomBarButton(
-              icon: Icons.dialpad_rounded,
-              label: '输编号直达',
-              color: AppColors.cyan,
-              onTap: () {
-                showModalBottomSheet<void>(
-                  context: context,
-                  isScrollControlled: true,
-                  backgroundColor: Colors.transparent,
-                  builder: (_) => const QuickSerialModal(),
-                );
-              },
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            flex: 3,
-            child: _BottomBarButton(
-              icon: Icons.tune_rounded,
-              label: '规则设置',
-              color: AppColors.textPrimary,
-              onTap: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => const RuleSettingsScreen(),
-                  ),
-                );
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Future<void> _showStationEditor(
-    BuildContext context,
-    WidgetRef ref, {
+    BuildContext context, {
     ChargingStation? existing,
   }) async {
     final aliasController = TextEditingController(text: existing?.alias ?? '');
@@ -467,8 +647,9 @@ class HomeScreen extends ConsumerWidget {
               settings,
             );
 
+            final p = AppTheme.paletteOf(context);
             return AlertDialog(
-              backgroundColor: AppColors.surface,
+              backgroundColor: p.modalSurface,
               title: Text(existing == null ? '新增充电桩' : '编辑充电桩'),
               content: SingleChildScrollView(
                 child: Column(
@@ -515,19 +696,19 @@ class HomeScreen extends ConsumerWidget {
                     Container(
                       padding: const EdgeInsets.all(10),
                       decoration: BoxDecoration(
-                        color: AppColors.bg,
+                        color: p.secondaryBg,
                         borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: AppColors.border),
+                        border: Border.all(color: p.secondaryBorder),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
                             '当前生效目标链接（${settings.socketNumber(draftStation.lastUsedPort)}号口）',
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.w700,
-                              color: AppColors.textSecondary,
+                              color: p.textSecondary,
                             ),
                           ),
                           const SizedBox(height: 4),
@@ -536,9 +717,7 @@ class HomeScreen extends ConsumerWidget {
                             style: TextStyle(
                               fontFamily: 'monospace',
                               fontSize: 11,
-                              color: resolvedUri != null
-                                  ? AppColors.emerald
-                                  : AppColors.danger,
+                              color: resolvedUri != null ? p.idle : p.danger,
                             ),
                             maxLines: 3,
                             overflow: TextOverflow.ellipsis,
@@ -556,21 +735,25 @@ class HomeScreen extends ConsumerWidget {
                 ),
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.emerald,
-                    foregroundColor: Colors.black,
+                    backgroundColor: p.primaryFill,
+                    foregroundColor: p.onPrimary,
                   ),
                   onPressed: () async {
                     final sn = snController.text.trim().toUpperCase();
                     if (sn.isEmpty) return;
-                    await ref.read(stationsProvider.notifier).upsertStation(
-                          id: existing?.id,
-                          alias: aliasController.text.trim(),
-                          serialNumber: sn,
-                          rawUrl: rawUrlController.text.trim(),
-                          customDeepLinkTemplate:
-                              customTemplateController.text.trim(),
-                          lastUsedPort: existing?.lastUsedPort ?? 1,
-                        );
+                    final saved =
+                        await ref.read(stationsProvider.notifier).upsertStation(
+                              id: existing?.id,
+                              alias: aliasController.text.trim(),
+                              serialNumber: sn,
+                              rawUrl: rawUrlController.text.trim(),
+                              customDeepLinkTemplate:
+                                  customTemplateController.text.trim(),
+                              lastUsedPort: existing?.lastUsedPort ?? 1,
+                            );
+                    if (mounted) {
+                      setState(() => _expandedStationId = saved.id);
+                    }
                     if (!dialogContext.mounted) return;
                     Navigator.of(dialogContext).pop();
                   },
@@ -589,15 +772,192 @@ class HomeScreen extends ConsumerWidget {
     customTemplateController.dispose();
   }
 
-  Future<void> _confirmDelete(
+  Future<void> _openLaiChongMiniProgram(BuildContext context) async {
+    final uri = Uri.parse(
+      'alipays://platformapi/startapp?appId=2019012363098597',
+    );
+    final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!launched && context.mounted) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(content: Text('未能唤起支付宝莱充小程序，请确认已安装支付宝')),
+        );
+    }
+  }
+
+  Widget _buildReminderBanner(
     BuildContext context,
-    WidgetRef ref,
+    dynamic reminder,
+  ) {
+    final p = AppTheme.paletteOf(context);
+    final remindAt = reminder.remindAt as DateTime;
+    final hh = remindAt.hour.toString().padLeft(2, '0');
+    final mm = remindAt.minute.toString().padLeft(2, '0');
+    final portText =
+        (reminder.portLabel as String).isEmpty ? '' : ' · ${reminder.portLabel}号口';
+    final isWatching = reminder.watchStationId != null;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      child: ZapGlassCard(
+        borderRadius: 16,
+        borderColor: p.primary.withValues(alpha: 0.5),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        child: Row(
+          children: [
+            Icon(Icons.alarm_on_rounded, color: p.primary, size: 18),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                '将于 $hh:$mm 提醒去「${reminder.stationName}$portText」拔枪${isWatching ? '（充完提前提醒）' : ''}',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: p.textPrimary,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            TextButton(
+              onPressed: () =>
+                  ref.read(chargingReminderProvider.notifier).clearReminder(),
+              child: Text(
+                '取消',
+                style: TextStyle(
+                  color: p.textSecondary,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showReminderPicker(
+    BuildContext context,
+    ChargingStation station,
+    int watchSlot,
+    String portLabel,
+  ) async {
+    final p = AppTheme.paletteOf(context);
+    final hours = await showModalBottomSheet<int>(
+      context: context,
+      backgroundColor: p.modalSurface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                '设置取车拔枪提醒 · ${station.alias} ($portLabel号口)',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  color: p.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                '到点自动弹通知；若轮询检测到该口提前充完转空闲，也会立刻提醒你',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: p.textSecondary,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [3, 5, 10, 12].map((h) {
+                  return SizedBox(
+                    width: (MediaQuery.of(sheetContext).size.width - 50) / 2,
+                    height: 48,
+                    child: OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        side: BorderSide(color: p.secondaryBorder),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                      onPressed: () => Navigator.of(sheetContext).pop(h),
+                      icon: Icon(
+                        Icons.schedule_rounded,
+                        size: 18,
+                        color: p.primary,
+                      ),
+                      label: Text(
+                        '$h 小时后提醒',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: p.textPrimary,
+                        ),
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (hours == null || !context.mounted) return;
+    await ref.read(chargingReminderProvider.notifier).setReminder(
+          stationName: station.alias,
+          portLabel: portLabel,
+          delay: Duration(hours: hours),
+          watchStationId: station.id,
+          watchSlot: watchSlot,
+        );
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(content: Text('已设置 $hours 小时后提醒去「${station.alias}」拔枪')),
+      );
+  }
+
+  Future<void> _showQuickRenameDialog(
+    BuildContext context,
     ChargingStation station,
   ) async {
+    final result = await showDialog<({String alias, String? address})>(
+      context: context,
+      builder: (_) => _QuickRenameDialog(
+        serialNumber: station.serialNumber,
+        initialAlias: station.alias,
+        initialAddress: station.address,
+      ),
+    );
+
+    if (result != null) {
+      await ref.read(stationsProvider.notifier).renameStation(
+            station.id,
+            result.alias,
+            address: result.address,
+          );
+    }
+  }
+
+  Future<void> _confirmDelete(
+    BuildContext context,
+    ChargingStation station,
+  ) async {
+    final p = AppTheme.paletteOf(context);
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        backgroundColor: AppColors.surface,
+        backgroundColor: p.modalSurface,
         title: const Text('删除充电桩'),
         content: Text('确认移除「${station.alias} (${station.serialNumber})」吗？'),
         actions: [
@@ -607,9 +967,9 @@ class HomeScreen extends ConsumerWidget {
           ),
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text(
+            child: Text(
               '删除',
-              style: TextStyle(color: AppColors.danger),
+              style: TextStyle(color: p.danger),
             ),
           ),
         ],
@@ -622,11 +982,12 @@ class HomeScreen extends ConsumerWidget {
   }
 }
 
-class _BottomBarButton extends StatelessWidget {
-  const _BottomBarButton({
+class _QuickActionChip extends StatelessWidget {
+  const _QuickActionChip({
     required this.icon,
     required this.label,
     required this.color,
+    required this.textColor,
     required this.onTap,
     this.filled = false,
   });
@@ -634,49 +995,195 @@ class _BottomBarButton extends StatelessWidget {
   final IconData icon;
   final String label;
   final Color color;
+  final Color textColor;
   final VoidCallback onTap;
   final bool filled;
 
   @override
   Widget build(BuildContext context) {
+    final p = AppTheme.paletteOf(context);
     return SizedBox(
-      height: 54,
-      child: Material(
-        color: filled ? color : AppColors.surfaceElevated,
-        borderRadius: BorderRadius.circular(14),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(14),
-          onTap: onTap,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(14),
-              border: filled ? null : Border.all(color: AppColors.border),
-            ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  icon,
-                  size: 20,
-                  color: filled ? Colors.black : color,
-                ),
-                const SizedBox(height: 2),
-                Text(
+      height: 44,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onTap,
+        child: ZapGlassCard(
+          borderRadius: 16,
+          blurSigma: 16,
+          borderColor: filled
+              ? Colors.white.withValues(alpha: 0.42)
+              : p.secondaryBorder,
+          backgroundColors: filled
+              ? [color, color.withValues(alpha: 0.92)]
+              : [p.secondaryBg, p.secondaryBg],
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                icon,
+                size: 18,
+                color: filled ? textColor : color,
+              ),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
                   label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontSize: 12,
+                    fontSize: 13,
                     fontWeight: FontWeight.w800,
-                    color: filled ? Colors.black : color,
+                    color: textColor,
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
+    );
+  }
+}
+
+class _QuickRenameDialog extends StatefulWidget {
+  const _QuickRenameDialog({
+    required this.serialNumber,
+    required this.initialAlias,
+    this.initialAddress,
+  });
+
+  final String serialNumber;
+  final String initialAlias;
+  final String? initialAddress;
+
+  @override
+  State<_QuickRenameDialog> createState() => _QuickRenameDialogState();
+}
+
+class _QuickRenameDialogState extends State<_QuickRenameDialog> {
+  late final TextEditingController _controller;
+  String? _fetchedAddress;
+  bool _isFetching = false;
+  String? _lookupMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchedAddress = widget.initialAddress;
+    _controller = TextEditingController(text: widget.initialAlias);
+    _controller.selection = TextSelection(
+      baseOffset: 0,
+      extentOffset: _controller.text.length,
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _fetchAddress() async {
+    if (_isFetching) return;
+    setState(() {
+      _isFetching = true;
+      _lookupMessage = null;
+    });
+    final info = await StationLookupService.fetchStationInfo(widget.serialNumber);
+    if (!mounted) return;
+    setState(() {
+      _isFetching = false;
+      if (info != null) {
+        _controller.text = info.displayName;
+        _controller.selection = TextSelection.collapsed(
+          offset: _controller.text.length,
+        );
+        _fetchedAddress = info.fullAddress;
+        _lookupMessage = '已获取：${info.fullAddress}';
+      } else {
+        _lookupMessage = '暂未查到该桩位置，请检查网络或手动输入';
+      }
+    });
+  }
+
+  void _submit() {
+    Navigator.of(context).pop((
+      alias: _controller.text,
+      address: _fetchedAddress,
+    ));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = AppTheme.paletteOf(context);
+    return AlertDialog(
+      backgroundColor: p.modalSurface,
+      title: Text('修改名称 · ${widget.serialNumber}'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          TextField(
+            controller: _controller,
+            autofocus: true,
+            textInputAction: TextInputAction.done,
+            decoration: const InputDecoration(
+              labelText: '桩位别名',
+              hintText: '例如 8.4地下室靠电梯',
+            ),
+            onSubmitted: (_) => _submit(),
+          ),
+          const SizedBox(height: 10),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: _isFetching ? null : _fetchAddress,
+              icon: _isFetching
+                  ? const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : Icon(
+                      Icons.my_location_rounded,
+                      size: 16,
+                      color: p.primary,
+                    ),
+              label: Text(
+                _isFetching ? '正在获取桩点名称...' : '自动获取桩点名称',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: p.primary,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ),
+          if (_lookupMessage != null)
+            Text(
+              _lookupMessage!,
+              style: TextStyle(
+                fontSize: 11,
+                color: p.textSecondary,
+              ),
+            ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('取消'),
+        ),
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: p.primaryFill,
+            foregroundColor: p.onPrimary,
+          ),
+          onPressed: _submit,
+          child: const Text('保存'),
+        ),
+      ],
     );
   }
 }

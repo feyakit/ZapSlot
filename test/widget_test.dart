@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:charge_quick/models/charging_station.dart';
 import 'package:charge_quick/providers/app_providers.dart';
+import 'package:charge_quick/providers/station_live_provider.dart';
 import 'package:charge_quick/screens/home_screen.dart';
 import 'package:charge_quick/screens/rule_settings_screen.dart';
 import 'package:charge_quick/services/launch_queue_service.dart';
@@ -74,6 +75,15 @@ void main() {
             onCancelBackground: () async {},
           );
         }),
+        stationLiveProvider.overrideWith((ref) {
+          return StationLiveNotifier(
+            readStations: () => ref.read(stationsProvider),
+            readIsOnline: () => isOnline,
+            readIsForeground: () => true,
+            fetchLive: (_, {cachedElectricityFees, cachedPackages}) async => null,
+            enableAutoPolling: false,
+          );
+        }),
       ],
       child: MaterialApp(
         theme: AppTheme.darkTheme,
@@ -88,9 +98,9 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('闪雀'), findsOneWidget);
-    expect(find.text('地库离线模式'), findsOneWidget);
+    expect(find.text('地库离线'), findsOneWidget);
     expect(find.text('W52001715'), findsOneWidget);
-    expect(find.text('选择插座编号（直达传参）'), findsWidgets);
+    expect(find.text('0'), findsWidgets);
 
     // 点击第一张卡片的“离线排队 · 0号口”
     await tester.tap(find.text('离线排队 · 0号口'));
@@ -105,11 +115,11 @@ void main() {
     expect(find.text('离线排队中 · 出电梯有网自动唤起'), findsNothing);
 
     await tester.scrollUntilVisible(
-      find.text('W52001414'),
+      find.textContaining('W52001414'),
       250,
       scrollable: find.byType(Scrollable).first,
     );
-    expect(find.text('W52001414'), findsOneWidget);
+    expect(find.textContaining('W52001414'), findsOneWidget);
   });
 
   testWidgets('online home labels the port buttons as direct payment',
@@ -118,13 +128,15 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('选号直达支付 · 0号口'), findsOneWidget);
-    expect(find.text('外网已畅通 · 点击即可直达支付宝选套餐'), findsOneWidget);
-    await tester.scrollUntilVisible(
-      find.text('选号直达支付 · 1号口'),
-      250,
-      scrollable: find.byType(Scrollable).first,
-    );
+    expect(find.text('外网已畅通 · 点卡展开选口'), findsOneWidget);
+    expect(find.text('选号直达支付 · 1号口'), findsNothing);
+
+    // 点击第二张折叠卡：自动展开第二张并自动闭合第一张
+    await tester.tap(find.text('B2-B区 2号桩'));
+    await tester.pumpAndSettle();
+
     expect(find.text('选号直达支付 · 1号口'), findsOneWidget);
+    expect(find.text('选号直达支付 · 0号口'), findsNothing);
   });
 
   testWidgets('QuickSerialModal auto-matches station and syncs lastUsedPort',
@@ -151,21 +163,66 @@ void main() {
     await tester.pumpWidget(buildTestApp(isOnline: true));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('规则设置'));
+    await tester.tap(find.text('设置'));
     await tester.pumpAndSettle();
 
     expect(find.byType(RuleSettingsScreen), findsOneWidget);
     await tester.scrollUntilVisible(
       find.text('莱充小程序 · 按插口直达选套餐付款页（默认）'),
       250,
-      scrollable: find.byType(Scrollable).first,
+      scrollable: find.byType(Scrollable).last,
     );
     expect(find.text('莱充小程序 · 按插口直达选套餐付款页（默认）'), findsOneWidget);
     await tester.scrollUntilVisible(
       find.text('莱充小程序 · 直达选插座页（查看空闲口）'),
       250,
-      scrollable: find.byType(Scrollable).first,
+      scrollable: find.byType(Scrollable).last,
     );
     expect(find.text('莱充小程序 · 直达选插座页（查看空闲口）'), findsOneWidget);
+  });
+
+  testWidgets('tapping station card title opens quick rename dialog and saves alias',
+      (tester) async {
+    await tester.pumpWidget(buildTestApp(isOnline: true));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('B2-A区 1号桩'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('修改名称 · W52001715'), findsOneWidget);
+    await tester.enterText(find.byType(TextField), '8.5地下室靠电梯');
+    await tester.tap(find.text('保存'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('8.5地下室靠电梯'), findsOneWidget);
+    expect(find.text('B2-A区 1号桩'), findsNothing);
+  });
+
+  testWidgets('tapping alarm button sets charging pickup reminder banner',
+      (tester) async {
+    await tester.pumpWidget(buildTestApp(isOnline: true));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byIcon(Icons.alarm_add_rounded).first);
+    await tester.pumpAndSettle();
+
+    expect(find.text('5 小时后提醒'), findsOneWidget);
+    await tester.tap(find.text('5 小时后提醒'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('0号口」拔枪'), findsOneWidget);
+  });
+
+  testWidgets('footprint tab shows local charging footprint and mini-program button',
+      (tester) async {
+    await tester.pumpWidget(buildTestApp(isOnline: true));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('足迹'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('足迹与订单'), findsOneWidget);
+    expect(find.text('本地充电足迹'), findsOneWidget);
+    expect(find.text('打开莱充小程序（查官方订单 / 停充）'), findsOneWidget);
   });
 }

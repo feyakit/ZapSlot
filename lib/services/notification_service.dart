@@ -16,6 +16,7 @@ class NotificationService {
   static const String channelDescription =
       '地下车库排队任务在网络恢复时推送高优先级通知，点击立即打开充电页面';
   static const int _recoveryNotificationId = 1001;
+  static const int _reminderNotificationId = 1002;
 
   void Function(String? payload)? _onNotificationTap;
   bool _initialized = false;
@@ -118,7 +119,46 @@ class NotificationService {
     );
   }
 
+  Future<void> showChargingReminderNotification({
+    required String stationName,
+    required String portLabel,
+  }) async {
+    const androidDetails = AndroidNotificationDetails(
+      channelId,
+      channelName,
+      channelDescription: channelDescription,
+      importance: Importance.max,
+      priority: Priority.max,
+      ticker: '充电定时提醒：该去拔枪挪车啦',
+      category: AndroidNotificationCategory.alarm,
+      autoCancel: true,
+    );
+
+    const darwinDetails = DarwinNotificationDetails(
+      presentAlert: true,
+      presentSound: true,
+      interruptionLevel: InterruptionLevel.timeSensitive,
+    );
+
+    const details = NotificationDetails(
+      android: androidDetails,
+      iOS: darwinDetails,
+    );
+
+    final suffix = portLabel.isEmpty ? '' : ' · $portLabel号口';
+    await _plugin.show(
+      _reminderNotificationId,
+      '取车拔枪提醒：$stationName',
+      '充电定时已到$suffix，记得去拔枪挪车',
+      details,
+    );
+  }
+
   Future<void> cancelRecoveryNotification() async {
     await _plugin.cancel(_recoveryNotificationId);
+  }
+
+  Future<void> cancelChargingReminderNotification() async {
+    await _plugin.cancel(_reminderNotificationId);
   }
 }

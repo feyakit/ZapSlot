@@ -1,3 +1,10 @@
+/// 外观主题模式（5 浅透液态玻璃 / 6 深透黑曜玻璃 / 跟随系统）
+enum AppThemePreference {
+  system,
+  light,
+  dark,
+}
+
 /// URL 匹配与生成策略
 enum UrlRuleMode {
   /// 优先使用全局模板（支持支付宝直达 Scheme / 自定义 HTTPS 模板）
@@ -33,6 +40,7 @@ class AppSettings {
     this.autoLaunchInForeground = true,
     this.autoAddScannedStation = true,
     int portIndexBase = 0,
+    this.themePreference = AppThemePreference.system,
   })  : defaultPortCount = defaultPortCount < 1
             ? 1
             : (defaultPortCount > 12 ? 12 : defaultPortCount),
@@ -97,6 +105,9 @@ class AppSettings {
   /// 插座号传参基准：0 = gun_num 从 0 开始（1号口传 0），1 = 与服务端 1 起始一致。
   final int portIndexBase;
 
+  /// 外观主题偏好：跟随系统 / 浅透液态玻璃 / 深透黑曜玻璃
+  final AppThemePreference themePreference;
+
   /// 展示给用户的插座编号（与微云充页面一致：0 起始时端口 1 显示为 0）。
   int socketNumber(int port) => (port - 1 + portIndexBase).clamp(0, 99);
 
@@ -109,6 +120,7 @@ class AppSettings {
     bool? autoLaunchInForeground,
     bool? autoAddScannedStation,
     int? portIndexBase,
+    AppThemePreference? themePreference,
   }) {
     final nextPorts = defaultPortCount ?? this.defaultPortCount;
     return AppSettings(
@@ -122,6 +134,7 @@ class AppSettings {
       autoAddScannedStation:
           autoAddScannedStation ?? this.autoAddScannedStation,
       portIndexBase: portIndexBase ?? this.portIndexBase,
+      themePreference: themePreference ?? this.themePreference,
     );
   }
 
@@ -135,6 +148,7 @@ class AppSettings {
       'autoLaunchInForeground': autoLaunchInForeground,
       'autoAddScannedStation': autoAddScannedStation,
       'portIndexBase': portIndexBase,
+      'themePreference': themePreference.name,
     };
   }
 
@@ -143,6 +157,11 @@ class AppSettings {
     final parsedMode = UrlRuleMode.values.firstWhere(
       (m) => m.name == modeName,
       orElse: () => UrlRuleMode.globalTemplate,
+    );
+    final themeName = json['themePreference'] as String?;
+    final parsedTheme = AppThemePreference.values.firstWhere(
+      (t) => t.name == themeName,
+      orElse: () => AppThemePreference.system,
     );
     final rawPorts = (json['defaultPortCount'] as num?)?.toInt() ?? 10;
     return AppSettings(
@@ -162,6 +181,7 @@ class AppSettings {
       autoLaunchInForeground: json['autoLaunchInForeground'] as bool? ?? true,
       autoAddScannedStation: json['autoAddScannedStation'] as bool? ?? true,
       portIndexBase: (json['portIndexBase'] as num?)?.toInt() ?? 0,
+      themePreference: parsedTheme,
     );
   }
 }
