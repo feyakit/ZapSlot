@@ -774,14 +774,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   Future<void> _openLaiChongMiniProgram(BuildContext context) async {
     final uri = Uri.parse(
-      'alipays://platformapi/startapp?appId=2019012363098597',
+      'alipays://platformapi/startapp?appId=2019012363098597&page=pages%2FchargingOrder%2FchargingOrder',
     );
     final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
     if (!launched && context.mounted) {
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
         ..showSnackBar(
-          const SnackBar(content: Text('未能唤起支付宝莱充小程序，请确认已安装支付宝')),
+          const SnackBar(content: Text('未能唤起支付宝莱充充电订单页，请确认已安装支付宝')),
         );
     }
   }

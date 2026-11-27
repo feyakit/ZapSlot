@@ -221,7 +221,7 @@ void main() {
     await tester.tap(find.text('足迹'));
     await tester.pumpAndSettle();
 
-    expect(find.text('足迹与订单'), findsOneWidget);
+    expect(find.text('足迹与统计'), findsOneWidget);
     expect(find.text('本地充电足迹'), findsOneWidget);
     expect(find.text('打开莱充小程序（查官方订单 / 停充）'), findsOneWidget);
   });

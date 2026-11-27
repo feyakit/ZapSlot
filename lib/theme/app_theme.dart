@@ -1,6 +1,7 @@
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 /// 闪雀 Liquid Glass 双套配色令牌：
 /// - light: 方案 5 全透明液态玻璃（浅透极光）
@@ -347,36 +348,48 @@ class ZapAuroraBackdrop extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final p = AppTheme.paletteOf(context);
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        DecoratedBox(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: p.bgGradient,
-              stops: const [0.0, 0.42, 0.80, 1.0],
+    final overlayStyle = (p.isLight
+            ? SystemUiOverlayStyle.dark
+            : SystemUiOverlayStyle.light)
+        .copyWith(
+      statusBarColor: Colors.transparent,
+      systemNavigationBarColor: Colors.transparent,
+      systemNavigationBarIconBrightness:
+          p.isLight ? Brightness.dark : Brightness.light,
+    );
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: overlayStyle,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: p.bgGradient,
+                stops: const [0.0, 0.42, 0.80, 1.0],
+              ),
             ),
           ),
-        ),
-        Positioned(
-          top: -80,
-          left: -60,
-          child: _AuroraOrb(color: p.orb1, size: 280),
-        ),
-        Positioned(
-          top: 120,
-          right: -90,
-          child: _AuroraOrb(color: p.orb2, size: 300),
-        ),
-        Positioned(
-          bottom: -70,
-          left: 30,
-          child: _AuroraOrb(color: p.orb3, size: 280),
-        ),
-        child,
-      ],
+          Positioned(
+            top: -80,
+            left: -60,
+            child: _AuroraOrb(color: p.orb1, size: 280),
+          ),
+          Positioned(
+            top: 120,
+            right: -90,
+            child: _AuroraOrb(color: p.orb2, size: 300),
+          ),
+          Positioned(
+            bottom: -70,
+            left: 30,
+            child: _AuroraOrb(color: p.orb3, size: 280),
+          ),
+          child,
+        ],
+      ),
     );
   }
 }

@@ -106,7 +106,8 @@ class _RuleSettingsScreenState extends ConsumerState<RuleSettingsScreen> {
       return;
     }
 
-    final next = AppSettings(
+    final current = ref.read(settingsProvider);
+    final next = current.copyWith(
       ruleMode: _ruleMode,
       globalUrlTemplate: templateText,
       serialRegex: regexText,

@@ -351,6 +351,21 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     if (state.themePreference == preference) return;
     await updateSettings(state.copyWith(themePreference: preference));
   }
+
+  Future<void> updateCommonChargeAmounts(List<double> amounts) async {
+    final cleaned = amounts
+        .where((a) => a > 0 && a <= 999)
+        .map((a) => double.parse(a.toStringAsFixed(2)))
+        .toSet()
+        .toList()
+      ..sort();
+    await updateSettings(
+      state.copyWith(
+        commonChargeAmounts:
+            cleaned.isEmpty ? AppSettings.defaultCommonAmounts : cleaned,
+      ),
+    );
+  }
 }
 
 final settingsProvider =

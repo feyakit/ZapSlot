@@ -216,6 +216,7 @@ class ChargingHistoryRecord {
     required this.serialNumber,
     required this.socketLabel,
     required this.triggeredAt,
+    this.amountYuan,
   });
 
   final String stationId;
@@ -223,6 +224,21 @@ class ChargingHistoryRecord {
   final String serialNumber;
   final String socketLabel;
   final DateTime triggeredAt;
+  final double? amountYuan;
+
+  ChargingHistoryRecord copyWith({
+    double? amountYuan,
+    bool clearAmount = false,
+  }) {
+    return ChargingHistoryRecord(
+      stationId: stationId,
+      stationAlias: stationAlias,
+      serialNumber: serialNumber,
+      socketLabel: socketLabel,
+      triggeredAt: triggeredAt,
+      amountYuan: clearAmount ? null : (amountYuan ?? this.amountYuan),
+    );
+  }
 
   Map<String, dynamic> toJson() => {
         'stationId': stationId,
@@ -230,9 +246,11 @@ class ChargingHistoryRecord {
         'serialNumber': serialNumber,
         'socketLabel': socketLabel,
         'triggeredAt': triggeredAt.toIso8601String(),
+        if (amountYuan != null) 'amountYuan': amountYuan,
       };
 
   factory ChargingHistoryRecord.fromJson(Map<String, dynamic> json) {
+    final rawAmount = json['amountYuan'];
     return ChargingHistoryRecord(
       stationId: json['stationId'] as String? ?? '',
       stationAlias: json['stationAlias'] as String? ?? '',
@@ -240,6 +258,7 @@ class ChargingHistoryRecord {
       socketLabel: json['socketLabel'] as String? ?? '',
       triggeredAt: DateTime.tryParse(json['triggeredAt'] as String? ?? '') ??
           DateTime.now(),
+      amountYuan: rawAmount is num ? rawAmount.toDouble() : null,
     );
   }
 }

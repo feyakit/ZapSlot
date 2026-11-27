@@ -5,6 +5,7 @@ import 'package:charge_quick/models/app_settings.dart';
 import 'package:charge_quick/models/charging_station.dart';
 import 'package:charge_quick/providers/app_providers.dart';
 import 'package:charge_quick/providers/charging_history_provider.dart';
+import 'package:charge_quick/services/charging_stats_service.dart';
 import 'package:charge_quick/services/launch_queue_service.dart';
 import 'package:charge_quick/services/notification_service.dart';
 import 'package:charge_quick/services/station_lookup_service.dart';
@@ -498,6 +499,83 @@ void main() {
       await historyNotifier.clearAll();
       expect(historyNotifier.state, isEmpty);
       expect(storage.loadChargingHistory(), isEmpty);
+      historyNotifier.dispose();
+    });
+
+    test('ChargingStats computes monthly count, interval, top station/socket, and buckets',
+        () {
+      final now = DateTime(2026, 11, 27, 20, 0);
+      final records = [
+        ChargingHistoryRecord(
+          stationId: '1',
+          stationAlias: '8.4地下室',
+          serialNumber: 'W52001414',
+          socketLabel: '7',
+          triggeredAt: DateTime(2026, 11, 27, 19, 30),
+          amountYuan: 1.5,
+        ),
+        ChargingHistoryRecord(
+          stationId: '1',
+          stationAlias: '8.4地下室',
+          serialNumber: 'W52001414',
+          socketLabel: '7',
+          triggeredAt: DateTime(2026, 11, 25, 8, 30),
+          amountYuan: 2.5,
+        ),
+        ChargingHistoryRecord(
+          stationId: '2',
+          stationAlias: '8.5地下室',
+          serialNumber: 'W52001715',
+          socketLabel: '4',
+          triggeredAt: DateTime(2026, 11, 20, 21, 0),
+        ),
+      ];
+
+      final weekStats =
+          ChargingStats.fromRecords(records, scope: StatsScope.week, now: now);
+      expect(weekStats.thisWeekCount, 2);
+      expect(weekStats.thisMonthCount, 3);
+      expect(weekStats.allTimeCount, 3);
+      expect(weekStats.thisWeekSpend, closeTo(4.0, 0.001));
+      expect(weekStats.thisMonthSpend, closeTo(4.0, 0.001));
+      expect(weekStats.allTimeSpend, closeTo(4.0, 0.001));
+      expect(weekStats.recordedSpendCount, 2);
+      expect(weekStats.averageSpend, closeTo(2.0, 0.001));
+      expect(weekStats.topStationName, '8.4地下室');
+      expect(weekStats.topStationPercent, 100);
+      expect(weekStats.topSocketLabel, '7号口');
+      expect(weekStats.periodBars.length, 7);
+      expect(weekStats.periodBars[4].count, 1); // 周五 (2026-11-27)
+      expect(weekStats.timeBuckets[0].count, 1); // 早 06-11
+      expect(weekStats.timeBuckets[2].count, 1); // 晚 17-22
+
+      final monthStats =
+          ChargingStats.fromRecords(records, scope: StatsScope.month, now: now);
+      expect(monthStats.totalCount, 3);
+      expect(monthStats.periodBars.length, 5);
+
+      final allStats =
+          ChargingStats.fromRecords(records, scope: StatsScope.all, now: now);
+      expect(allStats.periodBars.length, 6);
+      expect(allStats.periodBars.last.count, 3);
+    });
+
+    test('SettingsNotifier saves custom commonChargeAmounts and history saves amount',
+        () async {
+      final settingsNotifier = SettingsNotifier(storage);
+      await settingsNotifier.updateCommonChargeAmounts([2.5, 1.2, 2.5, 4.0]);
+      expect(settingsNotifier.state.commonChargeAmounts, [1.2, 2.5, 4.0]);
+      expect(storage.loadSettings().commonChargeAmounts, [1.2, 2.5, 4.0]);
+
+      final historyNotifier = ChargingHistoryNotifier(storage);
+      await historyNotifier.recordLaunch(
+        station: stations.first,
+        socketLabel: '7',
+      );
+      await historyNotifier.updateRecordAmount(0, 1.2);
+      expect(historyNotifier.state.first.amountYuan, 1.2);
+      expect(storage.loadChargingHistory().first.amountYuan, 1.2);
+      settingsNotifier.dispose();
       historyNotifier.dispose();
     });
   });

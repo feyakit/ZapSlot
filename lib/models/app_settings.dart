@@ -41,10 +41,13 @@ class AppSettings {
     this.autoAddScannedStation = true,
     int portIndexBase = 0,
     this.themePreference = AppThemePreference.system,
+    this.commonChargeAmounts = defaultCommonAmounts,
   })  : defaultPortCount = defaultPortCount < 1
             ? 1
             : (defaultPortCount > 12 ? 12 : defaultPortCount),
         portIndexBase = portIndexBase == 1 ? 1 : 0;
+
+  static const List<double> defaultCommonAmounts = [1.0, 1.5, 2.0, 3.0];
 
   /// 默认在线直达：直达莱充小程序 commodity 选套餐付款页，0–9 插座号一一对应传入 gun_num。
   static const String defaultGlobalTemplate =
@@ -108,6 +111,9 @@ class AppSettings {
   /// 外观主题偏好：跟随系统 / 浅透液态玻璃 / 深透黑曜玻璃
   final AppThemePreference themePreference;
 
+  /// 自定义常用充电金额列表（元），用于足迹页一键记账
+  final List<double> commonChargeAmounts;
+
   /// 展示给用户的插座编号（与微云充页面一致：0 起始时端口 1 显示为 0）。
   int socketNumber(int port) => (port - 1 + portIndexBase).clamp(0, 99);
 
@@ -121,6 +127,7 @@ class AppSettings {
     bool? autoAddScannedStation,
     int? portIndexBase,
     AppThemePreference? themePreference,
+    List<double>? commonChargeAmounts,
   }) {
     final nextPorts = defaultPortCount ?? this.defaultPortCount;
     return AppSettings(
@@ -135,6 +142,7 @@ class AppSettings {
           autoAddScannedStation ?? this.autoAddScannedStation,
       portIndexBase: portIndexBase ?? this.portIndexBase,
       themePreference: themePreference ?? this.themePreference,
+      commonChargeAmounts: commonChargeAmounts ?? this.commonChargeAmounts,
     );
   }
 
@@ -149,6 +157,7 @@ class AppSettings {
       'autoAddScannedStation': autoAddScannedStation,
       'portIndexBase': portIndexBase,
       'themePreference': themePreference.name,
+      'commonChargeAmounts': commonChargeAmounts,
     };
   }
 
@@ -163,6 +172,16 @@ class AppSettings {
       (t) => t.name == themeName,
       orElse: () => AppThemePreference.system,
     );
+    final rawAmounts = json['commonChargeAmounts'] as List<dynamic>?;
+    final parsedAmounts = rawAmounts
+        ?.whereType<num>()
+        .map((n) => double.parse(n.toDouble().toStringAsFixed(2)))
+        .where((n) => n > 0 && n <= 999)
+        .toSet()
+        .toList();
+    if (parsedAmounts != null) {
+      parsedAmounts.sort();
+    }
     final rawPorts = (json['defaultPortCount'] as num?)?.toInt() ?? 10;
     return AppSettings(
       ruleMode: parsedMode,
@@ -182,6 +201,9 @@ class AppSettings {
       autoAddScannedStation: json['autoAddScannedStation'] as bool? ?? true,
       portIndexBase: (json['portIndexBase'] as num?)?.toInt() ?? 0,
       themePreference: parsedTheme,
+      commonChargeAmounts: (parsedAmounts != null && parsedAmounts.isNotEmpty)
+          ? parsedAmounts
+          : defaultCommonAmounts,
     );
   }
 }
