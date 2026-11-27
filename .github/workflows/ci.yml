@@ -9,6 +9,8 @@ on:
 jobs:
   analyze-test-build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -100,3 +102,19 @@ jobs:
         with:
           name: zapslot-release-apk
           path: build/app/outputs/flutter-apk/*.apk
+
+      - name: Publish GitHub Release (direct APK download)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk ZapSlot-arm64-v8a.apk
+          cp build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk ZapSlot-armeabi-v7a.apk
+          cp build/app/outputs/flutter-apk/app-x86_64-release.apk ZapSlot-x86_64.apk
+          if gh release view latest >/dev/null 2>&1; then
+            gh release upload latest ZapSlot-arm64-v8a.apk ZapSlot-armeabi-v7a.apk ZapSlot-x86_64.apk --clobber
+          else
+            gh release create latest ZapSlot-arm64-v8a.apk ZapSlot-armeabi-v7a.apk ZapSlot-x86_64.apk \
+              --title "闪雀 (ZapSlot) 最新安装包" \
+              --notes "自动构建发布的最新 Android 安装包，现代手机直接下载安装 ZapSlot-arm64-v8a.apk 即可。"
+          fi
