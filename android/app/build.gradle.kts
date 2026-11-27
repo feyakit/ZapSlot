@@ -45,6 +45,13 @@ android {
         }
     }
 
+    packaging {
+        // 压缩 .so，安装包体积约减半（安装时解压，代价是首次安装略慢）
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
+
     buildTypes {
         release {
             signingConfig = if (keystorePropertiesFile.exists()) {
