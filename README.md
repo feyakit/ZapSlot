@@ -1,52 +1,104 @@
-<p align="center">
-  <img src="assets/images/logo.png" width="112" height="112" alt="闪雀 ZapSlot Logo" style="border-radius: 24px;" />
-</p>
+<div align="center">
+
+<img src="assets/images/logo.png" width="112" height="112" alt="闪雀 ZapSlot Logo" style="border-radius: 24px;" />
 
 # 闪雀 (ZapSlot)
 
-一款零后端、极速冷启动、专为**地下车库无信号扫码充电**与**跳过小程序开屏广告**打造的 Flutter 跨平台工具应用（iOS / Android）。
+地下车库离线扫桩排队、实时插口状态与一键直达支付工具 · Flutter + Riverpod 跨平台原生构建
 
-## 核心特性
+[![Release](https://img.shields.io/github/v/release/feyakit/ZapSlot?style=flat-square&color=007AFF)](../../releases)
+[![License](https://img.shields.io/badge/license-MIT-10B981?style=flat-square)](LICENSE)
+![Stack](https://img.shields.io/badge/Flutter-Dart%20%2B%20Riverpod-02569B?style=flat-square)
+![Platforms](https://img.shields.io/badge/platform-Android%20%7C%20iOS-16161B?style=flat-square)
 
-1. **地库离线扫桩 & 排队直达**
-   - 插好充电枪后，直接点选常用桩插座口（`1`–`10`）、使用离线双模扫描器（二维码 + 低光 ML Kit OCR 识桩号 + 手电筒 + `1x/2x/3x` 变焦）、或用大键盘输入 4 位尾号（如 `1715` 自动补全 `W52001715` 并自动同步上次插座号）。
-   - 无网络时自动将任务持久化到本地队列；坐电梯上楼网络恢复瞬间：
-     - 推送高优先级系统通知（点击通知即可直接跳转充电页面）；
-     - 若 App 在前台且开启了自动跳转，立即触发 `launchUrl` 拉起外部应用。
+[下载安装](#安装) · [核心功能](#核心功能) · [网络与直达引擎](#网络探测与直达引擎) · [使用说明](#使用说明) · [本地开发](#本地开发与构建) · [免责与许可](#免责声明与开源许可)
 
-2. **国内网络真实连通性探测**
-   - 使用 `connectivity_plus` + `internet_connection_checker_plus`（配置 `connect.rom.miui.com/generate_204`、`wifi.vivo.com.cn/generate_204`、`res.wx.qq.com` 等国内毫秒级探测点），避免海外探针超时和地库假 Wi-Fi 误判。
+</div>
 
-3. **三层优先级 URL 规则引擎（跳过开屏广告）**
-   - **第一优先级：单桩独立覆盖链接**（适合填写微信固定 `weixin://dl/business/?t=...` 短链或特殊桩链接）。
-   - **第二优先级：全局模板**（支持 `{SN}`、`{PORT}`、`{RAW_URL}`、`{RAW_URL_ENCODED}` 占位符，内置微云充支付宝内置浏览器直达 `alipays://platformapi/startapp?appId=20000067&url=...` 与通用二维码封装模板）。
-   - **第三优先级：原始扫码链接**。
+---
 
-## 本地运行与打包
+**项目定位**：`闪雀 (ZapSlot)` 是一款零后端、极速冷启动、基于 **Flutter + Riverpod** 构建的电动车充电辅助工具（Android / iOS），围绕「**全透明液态玻璃视觉、地下车库无网排队、15 秒实时插口同步、一键直达选套餐/查订单与充电花费统计**」进行深度工程化打磨，彻底告别地库没信号扫不了码、反复选口与小程序开屏等待。
 
-> 当前工程已包含完整的 Flutter 源码（`lib/`、`test/`）以及预配置好的 Android / iOS 原生工程（`android/`、`ios/`），无需再执行 `flutter create`。
+> [!NOTE]
+> **包名（Android）**：`com.feyakit.charge_quick`。全部充电桩、本地足迹、自定义金额与偏好配置均纯本地存储，零账号、零上传、零广告。
+
+## 核心功能
+
+### 液态玻璃视觉与交互
+
+- **全透明液态玻璃双主题**：内置 **方案 5 · 浅透液态玻璃（浅色极光）** 与 **方案 6 · 深透黑曜玻璃（深色星空）** 两套配色，支持在 **设置** 中选择「自动跟随系统 / 浅透玻璃 / 深透黑曜」，底部极光画布配合 `BackdropFilter` 实时高斯模糊与 `1px` 镜面描边，同时自动适配浅/深色系统状态栏图标。
+- **底部三栏悬浮玻璃导航**：功能按高频场景清晰拆分为 **充电 / 足迹 / 设置** 三个 Tab，配合 `IndexedStack` 零重绘瞬切。
+- **手风琴卡片展开与自动闭合**：充电主页默认仅展开第 1 张置顶常用桩，其余桩折叠为紧凑摘要行（名称 + 空闲胶囊 + 桩号 + 上次插口）；点任意折叠卡片平滑展开 5×2 插口格并**自动闭合上一张**，屏幕始终清爽利落。
+- **统一控件与字体自适应**：全站按钮、分段选择器、顶部胶囊与卡片菜单项（28×28 圆角磨砂徽章）均统一为圆角线性视觉体系；全局文字缩放钳制在 `0.9x–1.15x`，长桩名与长按钮单行省略，杜绝小屏或大字体下布局变形。
+
+### 充电主页与实时状态
+
+| 模块 / 场景 | 核心能力与交互体验 |
+| --- | --- |
+| ⚡ **5×2 实时插口格** | 前台在线时每 **15 秒** 自动轮询微云充云端状态，绿 / 橙 / 红微光圆点一眼区分空闲、充电中与故障口；支持按设备实际 `gun_num` 映射（0 起始 / 1 起始可切） |
+| 📊 **占口详情与防误触** | 点选正在充电的插口时，底部摘要条实时展示 **当前电流与预计剩余时间**；点击去支付时弹窗二次确认，避免误付别人正在用的插座 |
+| 📵 **地库离线排队** | 地下车库无信号时正常选桩选口并加入本地持久化队列，自动注册 `WorkManager` 联网约束任务；坐电梯出地库恢复信号瞬间自动拉起支付页（前台）或推送高优先级点击直达通知（后台） |
+| 📷 **离线双模扫新桩** | 支持离线二维码扫描与低光 **ML Kit OCR 编号识别**（附手电筒、`1x/2x/3x` 变焦与相册选图）；扫到新码自动入库置顶，联网后静默拉取云端桩点名称 |
+| ⌨️ **尾号键盘直达** | 内置大号数字键盘，输入 4 位桩号尾号（如 `1414` 自动补全 `W52001414`）自动匹配已存桩位、同步上次插口与实时空闲点，一键直达或离线排队 |
+| 🏷 **快捷改名与置顶** | 点击卡片标题即可快速自定义改名或一键拉取云端桩点名；右上角 `···` 菜单支持置顶常用桩、设提醒、直达莱充订单、复制目标链接与单桩独立规则 |
+
+### 足迹、统计与官方订单
+
+- **一键直达莱充官方充电订单**：点击「打开莱充小程序（查官方订单 / 停充）」直接跳入莱充官方 `pages/chargingOrder/chargingOrder` 页面，一步查看官方账单流水或手动停充。
+- **周 / 月 / 全量三维度统计**：本地自动留存最近 **200 条** 充电足迹，支持在 **本周 / 本月 / 全部** 间切换，实时生成每日/每周/近 6 个月柱状趋势图、最常去桩位占比、偏好插口以及早/午/晚/夜时段分布。
+- **自定义常用金额记账**：点击任意足迹可一键选择常用金额（默认 `1 / 1.5 / 2 / 3 元`）或输入实际花费，支持在弹窗内自由增删并持久保存常用金额；统计卡片自动汇总 **本周花费、本月花费与单次均价**。支持单条删除与清空二次确认防误删。
+- **定时 + 充完双重拔枪提醒**：在卡片右下角点击闹钟设置 `3 / 5 / 10 / 12` 小时定时提醒；若前台/轮询检测到所盯插口提前充完转为空闲，立即触发提前拔枪通知。
+
+## 网络探测与直达引擎
+
+针对地下车库弱网、假 Wi-Fi 与国产手机后台查杀做了专项工程化处理：
+
+- **国内毫秒级真实连通性探测**：结合 `connectivity_plus` 与 `internet_connection_checker_plus`，内置 `connect.rom.miui.com/generate_204`、`wifi.vivo.com.cn/generate_204`、`res.wx.qq.com` 等国内 HTTPS 探针，命中任意一个即视为真在线，规避海外探针超时与地库内网假连接误判；长按顶部网络胶囊或在 **设置** 中可随时打开 **网络诊断面板** 实时排查。
+- **三层优先级 URL / Scheme 规则引擎**：
+  1. **单桩独立覆盖链接**（最高优，适合填写微信固定短链或特殊品牌链接）；
+  2. **全局模板**（默认直达莱充小程序选套餐付款页 `alipays://platformapi/startapp?appId=2019012363098597&page=pagesEbike%2Fcommodity%2Fcommodity%3Fdevice_no%3D{SN}%26gun_num%3D{PORT_0}%26from%3DebikePile`，支持 `{SN}`、`{PORT}`、`{PORT_0}`、`{RAW_URL_ENCODED}` 等占位符与实时渲染测试）；
+  3. **原始扫码链接**（兜底兼容其他品牌充电桩）。
+
+## 安装
+
+在 [Releases](../../releases) 下载最新官方安装包：
+
+| 平台 | 安装说明 |
+| --- | --- |
+| Android 5.0+ (API 21+) | 提供 `arm64-v8a` / `armeabi-v7a` / `x86_64` 分包 APK（**主流安卓手机选 `arm64-v8a`**） |
+| iOS 15.5+ | 源码已包含完整 `ios/` 原生工程配置，需在 macOS 上通过 Xcode 编译签名安装 |
+
+## 使用说明
+
+1. **添加与管理桩位**：点击首页「离线扫新桩」扫描二维码或 OCR 识别桩号即可自动入库置顶；点击卡片标题可自定义改名，点右上角 `···` 可置顶常用桩或配置单桩独立规则。
+2. **外观切换**：在底部 **设置** 页顶部可随时切换「自动 / 浅透玻璃 / 深透黑曜」。
+3. **记账与统计**：每次通过闪雀直达充电会自动记录到 **足迹** 页；点单条记录即可一键记金额，点右上角「自定义常用」可增删并保存常用金额预设。
+4. **排查信号误判**：如遇到有信号却显示「地库离线」，长按首页顶部网络胶囊或在 **设置** 底部点击「网络诊断」即可查看各探针实时响应。
+
+## 本地开发与构建
+
+> 当前仓库已包含完整的 Flutter 源码（`lib/`、`test/`）与预配置好的 Android / iOS 原生工程（`android/`、`ios/`），无需再执行 `flutter create`。
 
 ```bash
-# 1. 进入项目目录
-cd ZapSlot
-
-# 2. 安装依赖并运行单元测试与组件测试
+# 1. 安装依赖
 flutter pub get
+
+# 2. 静态检查与全量单元测试 / 组件测试
+flutter analyze --no-fatal-infos
 flutter test
 
-# 3. 真机运行（建议用真机测试相机、手电筒、变焦与微信/支付宝 Scheme 跳转）
+# 3. 真机运行（建议真机测试相机、手电筒与支付宝 Scheme 跳转）
 flutter run --release
 
-# 4. 打包 Android APK
-flutter build apk --release
+# 4. 分 ABI 构建 Android Release APK
+flutter build apk --release --split-per-abi
 ```
 
-### Android 配置说明
-- `android/app/src/main/AndroidManifest.xml` 已配置 `CAMERA`、`INTERNET`、`ACCESS_NETWORK_STATE`、`POST_NOTIFICATIONS`、`VIBRATE` 权限以及 `<queries>` 中的 `weixin` / `alipays` / `https` / `http` Scheme。
-- `android/app/build.gradle.kts` 已启用 `org.jetbrains.kotlin.android`、`minSdk >= 21`、`multiDexEnabled = true`、`coreLibraryDesugaring`，并支持通过 `android/key.properties`（参见 `android/key.properties.example`）进行正式 Release 签名（未配置时自动回退至 debug 签名便于本地/CI 验证）。
-- 离线排队时自动通过 `workmanager` 注册**联网约束一次性任务（OneOffTask）+ 15 分钟周期兜底任务（PeriodicTask）**，即使 App 被 MIUI/ColorOS 杀后台，出电梯联网后仍可唤醒并推送高优先级直达通知（极端省电策略下最晚由 15 分钟周期任务兜底）。
+- **Android 配置**：`AndroidManifest.xml` 已配置相机、网络、通知、震动与 `alipays` / `weixin` Scheme 查询，并在 `network_security_config.xml` 中仅对 `weixin.weiyunchong.com` 放行明文 HTTP；`build.gradle.kts` 支持 `android/key.properties` 正式签名（未配置时自动回退 debug 签名）。
+- **iOS 配置**：`Info.plist` 已配置相机权限、`LSApplicationQueriesSchemes`（`alipays`、`weixin`）与后台刷新任务标识；在 macOS 上执行 `cd ios && pod install` 即可构建。
 
-### iOS 配置说明
-- `ios/Runner/AppDelegate.swift` 已配置 `UNUserNotificationCenter.current().delegate = self` 以支持前台通知展示。
-- `ios/Runner/Info.plist` 已配置 `NSCameraUsageDescription`、`LSApplicationQueriesSchemes`（`weixin`、`alipays`）、`UIBackgroundModes`（`fetch`、`processing`）与 `BGTaskSchedulerPermittedIdentifiers`（`com.feyakit.chargeQuick.networkRecovery`）。
-- `ios/Runner.xcodeproj/project.pbxproj` 已将 iOS Deployment Target 设为 `15.5`（Google ML Kit 依赖要求），在 macOS 上执行 `cd ios && pod install` 即可构建。
+## 免责声明与开源许可
+
+1. **开源许可**：本项目基于 **[MIT License](LICENSE)** 开源，仅供个人学习、跨平台开发研究与日常自用。
+2. **纯本地无侵入**：应用仅使用公开的设备状态查询与标准 URL Scheme 路由跳转，不收集、不存储、不代理任何第三方账号密码或支付凭据，也不包含任何辅助功能自动化点击或风控绕过逻辑。
+3. **数据归属**：官方账单与扣费记录归原充电平台所有，请通过「打开莱充小程序」在官方页面核对与管理订单。
