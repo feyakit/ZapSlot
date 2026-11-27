@@ -116,6 +116,15 @@ class _OfflineScannerScreenState extends ConsumerState<OfflineScannerScreen> {
         ? UrlRuleEngine.extractBaseTemplateFromUrl(rawValue, extractedSn)
         : '';
 
+    if (await _autoCollectIfEnabled(rawValue, extractedSn)) {
+      // 已静默入库：保持 1.2 秒冷却，避免镜头对着同一张码反复写入。
+      await Future<void>.delayed(const Duration(milliseconds: 1200));
+      if (mounted) {
+        _isConfirming = false;
+      }
+      return;
+    }
+
     try {
       await _scannerController.stop();
     } catch (_) {}
@@ -168,6 +177,15 @@ class _OfflineScannerScreenState extends ConsumerState<OfflineScannerScreen> {
           sampleSn: sn,
           samplePort: 1,
         );
+        if (await _autoCollectIfEnabled(generatedUrl, sn)) {
+          if (mounted) {
+            _isConfirming = false;
+            setState(() {
+              _hintText = '已自动收录 $sn，继续对准下一个桩号即可';
+            });
+          }
+          return;
+        }
         await _showResultConfirmationSheet(
           detectedSerial: sn,
           rawUrl: generatedUrl,
@@ -196,6 +214,39 @@ class _OfflineScannerScreenState extends ConsumerState<OfflineScannerScreen> {
       }
       _isRunningOcr = false;
     }
+  }
+
+  /// 按设置把识别到的桩静默入库：新桩自动添加并置顶，老桩只更新二维码，
+  /// 保留别名 / 上次插座号 / 自定义直达模板，扫码过程不被打断。
+  Future<bool> _autoCollectIfEnabled(String rawUrl, String? serialNumber) async {
+    final settings = ref.read(settingsProvider);
+    if (!settings.autoAddScannedStation) return false;
+
+    final serial = (serialNumber ?? '').trim().toUpperCase();
+    if (serial.isEmpty || rawUrl.trim().isEmpty) return false;
+
+    final existed =
+        ref.read(stationsProvider).any((s) => s.serialNumber == serial);
+    final saved =
+        await ref.read(stationsProvider.notifier).collectScannedStation(
+              serialNumber: serial,
+              rawUrl: rawUrl,
+            );
+    if (!mounted) return true;
+
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          duration: const Duration(milliseconds: 1800),
+          content: Text(
+            existed
+                ? '已更新 ${saved.alias} 的二维码'
+                : '已自动添加充电桩 ${saved.alias}（${saved.serialNumber}）',
+          ),
+        ),
+      );
+    return true;
   }
 
   Future<void> _showResultConfirmationSheet({

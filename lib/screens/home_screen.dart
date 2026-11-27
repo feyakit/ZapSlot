@@ -7,6 +7,7 @@ import '../providers/app_providers.dart';
 import '../services/launch_queue_service.dart';
 import '../services/url_rule_engine.dart';
 import '../theme/app_theme.dart';
+import '../widgets/network_diagnostics_sheet.dart';
 import '../widgets/quick_serial_modal.dart';
 import '../widgets/station_card.dart';
 import 'offline_scanner_screen.dart';
@@ -166,6 +167,7 @@ class HomeScreen extends ConsumerWidget {
             borderRadius: BorderRadius.circular(24),
             onTap: () =>
                 ref.read(launchQueueProvider.notifier).refreshNetworkStatus(),
+            onLongPress: () => _showNetworkDiagnostics(context, ref),
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               decoration: BoxDecoration(
@@ -214,6 +216,11 @@ class HomeScreen extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  /// 长按网络胶囊：现场排查"有信号却提示离线"。
+  Future<void> _showNetworkDiagnostics(BuildContext context, WidgetRef ref) async {
+    await showNetworkDiagnosticsSheet(context);
   }
 
   Widget _buildActiveQueueBanner(

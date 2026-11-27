@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -145,6 +146,41 @@ class LaunchQueueNotifier extends StateNotifier<LaunchQueueState> {
   StreamSubscription<List<ConnectivityResult>>? _connectivitySub;
   StreamSubscription<InternetStatus>? _internetSub;
   bool _isTriggeringRecovery = false;
+  DateTime? _lastOnlineConfirmedAt;
+
+  /// 在线热路径窗口：30 秒内确认过外网连通就直接拉起，不再重复探测。
+  static const Duration _onlineFreshWindow = Duration(seconds: 30);
+
+  bool get _isOnlineFresh {
+    final at = _lastOnlineConfirmedAt;
+    if (!state.isOnline || at == null) return false;
+    return DateTime.now().difference(at) < _onlineFreshWindow;
+  }
+
+  /// 轻量探针：单个国内 204 探测点、1.2 秒超时，用于点按时的即时判定。
+  Future<bool> _quickProbe() async {
+    final override = _checkInternetOverride;
+    if (override != null) return override();
+    final client = HttpClient()
+      ..connectionTimeout = const Duration(milliseconds: 1200);
+    try {
+      final request = await client
+          .getUrl(Uri.parse('https://connect.rom.miui.com/generate_204'))
+          .timeout(const Duration(milliseconds: 1200));
+      final response = await request
+          .close()
+          .timeout(const Duration(milliseconds: 1500));
+      await response.drain<void>().timeout(
+            const Duration(milliseconds: 800),
+            onTimeout: () {},
+          );
+      return response.statusCode == 204 || response.statusCode == 200;
+    } catch (_) {
+      return false;
+    } finally {
+      client.close(force: true);
+    }
+  }
 
   Future<void> initialize() async {
     _restorePersistedQueue();
@@ -200,9 +236,22 @@ class LaunchQueueNotifier extends StateNotifier<LaunchQueueState> {
     if (!mounted) return false;
     state = state.copyWith(isChecking: true);
     try {
-      final reachable = _checkInternetOverride != null
-          ? await _checkInternetOverride()
-          : await (_internetChecker?.hasInternetAccess ?? Future.value(false));
+      var reachable = false;
+      if (_checkInternetOverride != null) {
+        reachable = await _checkInternetOverride();
+      } else {
+        // 第三方检测库在部分 ROM 上会抛异常（SocketException/TLS）而不是返回 false，
+        // 单独 try 住，保证总能落到自带的 HTTPS 探针，避免"明明在线却显示离线"。
+        try {
+          reachable =
+              await (_internetChecker?.hasInternetAccess ?? Future.value(false));
+        } catch (_) {
+          reachable = false;
+        }
+        if (!reachable) {
+          reachable = await _quickProbe();
+        }
+      }
       if (!mounted) return reachable;
       _handleNetworkTransition(reachable, triggerRecovery: triggerRecovery);
       return reachable;
@@ -224,6 +273,11 @@ class LaunchQueueNotifier extends StateNotifier<LaunchQueueState> {
   }) {
     if (!mounted) return;
     final wasOnline = state.isOnline;
+    if (nextIsOnline) {
+      _lastOnlineConfirmedAt = DateTime.now();
+    } else {
+      _lastOnlineConfirmedAt = null;
+    }
     if (state.isOnline != nextIsOnline || state.isChecking) {
       state = state.copyWith(isOnline: nextIsOnline, isChecking: false);
     }
@@ -293,7 +347,7 @@ class LaunchQueueNotifier extends StateNotifier<LaunchQueueState> {
     }
   }
 
-  /// 一键直达或离线排队：在线立即拉起外部 App，离线持久化排队并注册后台恢复任务。
+  /// 一键直达或离线排队：在线立刻拉起外部 App（选号直达支付），离线持久化排队并注册后台恢复任务。
   Future<QueueActionOutcome> triggerOrQueue(
     ChargingStation station,
     int port,
@@ -312,48 +366,67 @@ class LaunchQueueNotifier extends StateNotifier<LaunchQueueState> {
       return QueueActionOutcome.launchFailed;
     }
 
-    // 触发前先做一次快速连通性确认，避免状态过期，同时禁用旧任务自动恢复以防重复拉起。
-    final currentlyOnline = await refreshNetworkStatus(triggerRecovery: false);
-    if (!mounted) return QueueActionOutcome.launchFailed;
-
-    if (currentlyOnline) {
-      final launched = await _launchUri(uri);
-      if (!mounted) {
-        return launched
-            ? QueueActionOutcome.launchedImmediately
-            : QueueActionOutcome.launchFailed;
+    // 热路径：最近 30 秒内已确认在线时跳过探针，点按即刻拉起支付宝直达支付页。
+    if (!_isOnlineFresh) {
+      final online = await _quickProbe();
+      if (mounted) {
+        _handleNetworkTransition(online, triggerRecovery: false);
       }
-      if (launched) {
-        await _storage.clearPendingQueue();
-        await _cancelBackground();
-        await _notifications.cancelRecoveryNotification();
-        state = state.copyWith(
-          clearPendingStation: true,
-          clearPendingPort: true,
-          clearQueuedAt: true,
-          lastAttemptedUrl: uri.toString(),
-          statusMessage: '已拉起 ${station.serialNumber} ($safePort号口)',
-        );
-        return QueueActionOutcome.launchedImmediately;
+      if (!online) {
+        return _enqueueOffline(station, safePort, uri);
       }
-
-      // 某些机型/系统可能未安装对应 Scheme 应用，保留提示但不误入离线队列。
-      state = state.copyWith(
-        lastAttemptedUrl: uri.toString(),
-        statusMessage: '未能唤起外部应用 (${uri.scheme})，请确认已安装微信/支付宝或检查规则',
-      );
-      return QueueActionOutcome.launchFailed;
     }
 
-    await _storage.savePendingQueue(stationId: station.id, port: safePort);
+    final launched = await _launchUri(uri);
+    if (!mounted) {
+      return launched
+          ? QueueActionOutcome.launchedImmediately
+          : QueueActionOutcome.launchFailed;
+    }
+    if (launched) {
+      await _storage.clearPendingQueue();
+      await _cancelBackground();
+      await _notifications.cancelRecoveryNotification();
+      state = state.copyWith(
+        clearPendingStation: true,
+        clearPendingPort: true,
+        clearQueuedAt: true,
+        lastAttemptedUrl: uri.toString(),
+        statusMessage: '已直达 ${station.serialNumber} ($safePort号口)',
+      );
+      return QueueActionOutcome.launchedImmediately;
+    }
+
+    // 拉起失败：若其实离线（地库伪 Wi-Fi）则转到离线排队，否则提示 Scheme 不可用。
+    final onlineNow = await _quickProbe();
+    if (!onlineNow) {
+      return _enqueueOffline(station, safePort, uri);
+    }
+    if (mounted) {
+      state = state.copyWith(
+        lastAttemptedUrl: uri.toString(),
+        statusMessage:
+            '未能唤起外部应用 (${uri.scheme})，请确认已安装支付宝/微信或检查规则',
+      );
+    }
+    return QueueActionOutcome.launchFailed;
+  }
+
+  /// 离线入队：持久化任务并注册后台网络恢复任务。
+  Future<QueueActionOutcome> _enqueueOffline(
+    ChargingStation station,
+    int port,
+    Uri uri,
+  ) async {
+    await _storage.savePendingQueue(stationId: station.id, port: port);
     await _scheduleBackground();
     if (!mounted) return QueueActionOutcome.queuedOffline;
     state = state.copyWith(
-      pendingStation: station.copyWith(lastUsedPort: safePort),
-      pendingPort: safePort,
+      pendingStation: station.copyWith(lastUsedPort: port),
+      pendingPort: port,
       queuedAt: DateTime.now(),
       lastAttemptedUrl: uri.toString(),
-      statusMessage: '已加入地库离线排队：${station.serialNumber} · $safePort号口',
+      statusMessage: '已加入地库离线排队：${station.serialNumber} · $port号口',
     );
     return QueueActionOutcome.queuedOffline;
   }

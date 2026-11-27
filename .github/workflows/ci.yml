@@ -72,6 +72,23 @@ jobs:
           }
           EOF
 
+      - name: Configure stable test signing
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          mkdir -p android/keystore
+          printf '%s' "$KEYSTORE_BASE64" | base64 -d > android/keystore/zapslot-test.jks
+          cat > android/key.properties <<EOF
+          storePassword=$STORE_PASSWORD
+          keyPassword=$KEY_PASSWORD
+          keyAlias=$KEY_ALIAS
+          storeFile=../keystore/zapslot-test.jks
+          EOF
+          echo "签名配置已写入（密钥来自 GitHub Secrets，不进仓库）"
+
       - name: Build Android Release APK
         run: flutter build apk --release
 

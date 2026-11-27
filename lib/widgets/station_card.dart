@@ -306,7 +306,9 @@ class _StationCardState extends State<StationCard> {
                 widget.isQueuedHere
                     ? '排队中 (${widget.queuedPort ?? _selectedPort}号口) · 点此更新'
                     : (widget.isOnline
-                        ? '一键唤醒 · $_selectedPort号口'
+                        ? (widget.usesPort
+                            ? '选号直达支付 · $_selectedPort号口'
+                            : '打开充电页 · $_selectedPort号口')
                         : '离线排队 · $_selectedPort号口'),
                 style: const TextStyle(
                   fontSize: 16,
