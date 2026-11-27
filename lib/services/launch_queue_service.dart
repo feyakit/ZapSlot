@@ -149,7 +149,7 @@ class LaunchQueueNotifier extends StateNotifier<LaunchQueueState> {
   DateTime? _lastOnlineConfirmedAt;
 
   /// 在线热路径窗口：30 秒内确认过外网连通就直接拉起，不再重复探测。
-  static const Duration _onlineFreshWindow = Duration(seconds: 30);
+  static const Duration _onlineFreshWindow = Duration(minutes: 5);
 
   bool get _isOnlineFresh {
     final at = _lastOnlineConfirmedAt;
@@ -157,21 +157,21 @@ class LaunchQueueNotifier extends StateNotifier<LaunchQueueState> {
     return DateTime.now().difference(at) < _onlineFreshWindow;
   }
 
-  /// 轻量探针：单个国内 204 探测点、1.2 秒超时，用于点按时的即时判定。
+  /// 轻量探针：单个国内 204 探测点、800ms 超时，用于点按时的即时判定。
   Future<bool> _quickProbe() async {
     final override = _checkInternetOverride;
     if (override != null) return override();
     final client = HttpClient()
-      ..connectionTimeout = const Duration(milliseconds: 1200);
+      ..connectionTimeout = const Duration(milliseconds: 800);
     try {
       final request = await client
           .getUrl(Uri.parse('https://connect.rom.miui.com/generate_204'))
-          .timeout(const Duration(milliseconds: 1200));
+          .timeout(const Duration(milliseconds: 800));
       final response = await request
           .close()
-          .timeout(const Duration(milliseconds: 1500));
+          .timeout(const Duration(milliseconds: 1200));
       await response.drain<void>().timeout(
-            const Duration(milliseconds: 800),
+            const Duration(milliseconds: 500),
             onTimeout: () {},
           );
       return response.statusCode == 204 || response.statusCode == 200;
@@ -384,10 +384,15 @@ class LaunchQueueNotifier extends StateNotifier<LaunchQueueState> {
           : QueueActionOutcome.launchFailed;
     }
     if (launched) {
+      // 拉起成功说明网络与目标 App 都可用，记一次"刚确认在线"，下次点按直接走热路径。
+      _lastOnlineConfirmedAt = DateTime.now();
       await _storage.clearPendingQueue();
       await _cancelBackground();
       await _notifications.cancelRecoveryNotification();
+      if (!mounted) return QueueActionOutcome.launchedImmediately;
       state = state.copyWith(
+        isOnline: true,
+        isChecking: false,
         clearPendingStation: true,
         clearPendingPort: true,
         clearQueuedAt: true,

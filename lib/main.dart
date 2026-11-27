@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -12,14 +14,12 @@ import 'theme/app_theme.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // 只做首帧必须的准备工作（读本地数据，毫秒级）；
+  // WorkManager 初始化与通知权限弹窗放到界面出现之后，避免冷启动被权限框卡住。
   final prefs = await SharedPreferences.getInstance();
   final storage = StorageService(prefs);
   final initialStations = await storage.loadStationsOrSeed();
-
-  await BackgroundQueueWorker.initialize();
-
   final notifications = NotificationService();
-  final launchPayload = await notifications.initialize();
 
   runApp(
     ProviderScope(
@@ -28,7 +28,7 @@ Future<void> main() async {
         initialStationsProvider.overrideWithValue(initialStations),
         notificationServiceProvider.overrideWithValue(notifications),
       ],
-      child: ChargeQuickApp(initialNotificationPayload: launchPayload),
+      child: const ChargeQuickApp(),
     ),
   );
 }
@@ -57,6 +57,12 @@ class _ChargeQuickAppState extends ConsumerState<ChargeQuickApp>
       ref.read(launchQueueProvider.notifier).handleNotificationPayload(payload);
     });
 
+    // 首帧之后再准备后台任务与通知通道，并补处理"由通知点开冷启动"的情况。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(BackgroundQueueWorker.initialize());
+      unawaited(_prepareNotifications(notifications));
+    });
+
     if (widget.initialNotificationPayload != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         ref
@@ -64,6 +70,12 @@ class _ChargeQuickAppState extends ConsumerState<ChargeQuickApp>
             .handleNotificationPayload(widget.initialNotificationPayload);
       });
     }
+  }
+
+  Future<void> _prepareNotifications(NotificationService notifications) async {
+    final payload = await notifications.initialize();
+    if (!mounted || payload == null || payload.isEmpty) return;
+    ref.read(launchQueueProvider.notifier).handleNotificationPayload(payload);
   }
 
   @override
