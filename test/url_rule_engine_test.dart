@@ -143,11 +143,11 @@ void main() {
       // 默认模板直接带插座号（0 起始）：8 号口 -> gun_num=7，9 号口 -> gun_num=8
       expect(
         UrlRuleEngine.buildTargetUri(station1, 8, defaultSettings).toString(),
-        'alipays://platformapi/startapp?appId=20000067&url=http%3A%2F%2Fweixin.weiyunchong.com%2FpayQRcode.html%3Fdevice_no%3DW52001414%26gun_num%3D7',
+        'alipays://platformapi/startapp?appId=2019012363098597&page=pagesEbike%2Fcommodity%2Fcommodity%3Fdevice_no%3DW52001414%26gun_num%3D7%26from%3DebikePile',
       );
       expect(
         UrlRuleEngine.buildTargetUri(station2, 9, defaultSettings).toString(),
-        'alipays://platformapi/startapp?appId=20000067&url=http%3A%2F%2Fweixin.weiyunchong.com%2FpayQRcode.html%3Fdevice_no%3DW52001715%26gun_num%3D8',
+        'alipays://platformapi/startapp?appId=2019012363098597&page=pagesEbike%2Fcommodity%2Fcommodity%3Fdevice_no%3DW52001715%26gun_num%3D8%26from%3DebikePile',
       );
       expect(
         UrlRuleEngine.templateUsesPort(station1, defaultSettings),
@@ -275,12 +275,12 @@ void main() {
       const zeroBased = AppSettings(portIndexBase: 0);
       const oneBased = AppSettings(portIndexBase: 1);
 
-      final zeroUrl = UrlRuleEngine.buildTargetUri(station, 5, zeroBased)!
-          .queryParameters['url']!;
-      final oneUrl = UrlRuleEngine.buildTargetUri(station, 5, oneBased)!
-          .queryParameters['url']!;
-      expect(zeroUrl, contains('gun_num=4'));
-      expect(oneUrl, contains('gun_num=5'));
+      final zeroPage = UrlRuleEngine.buildTargetUri(station, 5, zeroBased)!
+          .queryParameters['page']!;
+      final onePage = UrlRuleEngine.buildTargetUri(station, 5, oneBased)!
+          .queryParameters['page']!;
+      expect(zeroPage, contains('gun_num=4'));
+      expect(onePage, contains('gun_num=5'));
     });
 
     test('socketNumber mirrors the charging platform numbering', () {

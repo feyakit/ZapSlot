@@ -234,48 +234,49 @@ class _StationCardState extends State<StationCard> {
             ),
           ),
           const SizedBox(height: 8),
-          SizedBox(
-            height: 46,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: widget.portCount,
-              separatorBuilder: (_, __) => const SizedBox(width: 8),
-              itemBuilder: (context, index) {
-                final port = index + 1;
-                final isSelected = port == _selectedPort;
-                return InkWell(
-                  borderRadius: BorderRadius.circular(12),
-                  onTap: () {
-                    HapticFeedback.selectionClick();
-                    setState(() => _selectedPort = port);
-                  },
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 140),
-                    width: 48,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: isSelected
-                          ? accentColor.withValues(alpha: 0.22)
-                          : AppColors.surfaceElevated,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: isSelected ? accentColor : AppColors.border,
-                        width: isSelected ? 1.8 : 1,
-                      ),
-                    ),
-                    child: Text(
-                      _socket(port),
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800,
-                        color:
-                            isSelected ? accentColor : AppColors.textPrimary,
-                      ),
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: widget.portCount,
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 5,
+              mainAxisSpacing: 8,
+              crossAxisSpacing: 8,
+              childAspectRatio: 1.25,
+            ),
+            itemBuilder: (context, index) {
+              final port = index + 1;
+              final isSelected = port == _selectedPort;
+              return InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: () {
+                  HapticFeedback.selectionClick();
+                  setState(() => _selectedPort = port);
+                },
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 140),
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: isSelected
+                        ? accentColor.withValues(alpha: 0.22)
+                        : AppColors.surfaceElevated,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: isSelected ? accentColor : AppColors.border,
+                      width: isSelected ? 1.8 : 1,
                     ),
                   ),
-                );
-              },
-            ),
+                  child: Text(
+                    _socket(port),
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                      color: isSelected ? accentColor : AppColors.textPrimary,
+                    ),
+                  ),
+                ),
+              );
+            },
           ),
           const SizedBox(height: 14),
           SizedBox(

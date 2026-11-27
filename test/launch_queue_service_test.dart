@@ -136,7 +136,7 @@ void main() {
       expect(launchedUris.length, 1);
       expect(
         launchedUris.first.toString(),
-        'alipays://platformapi/startapp?appId=20000067&url=http%3A%2F%2Fweixin.weiyunchong.com%2FpayQRcode.html%3Fdevice_no%3DW52001414%26gun_num%3D7',
+        'alipays://platformapi/startapp?appId=2019012363098597&page=pagesEbike%2Fcommodity%2Fcommodity%3Fdevice_no%3DW52001414%26gun_num%3D7%26from%3DebikePile',
       );
       expect(bgCancelCount, 1);
       expect(notifier.state.hasPendingTask, isFalse);
@@ -189,7 +189,7 @@ void main() {
       expect(launchedUris.length, 1);
       expect(
         launchedUris.first.toString(),
-        'alipays://platformapi/startapp?appId=20000067&url=http%3A%2F%2Fweixin.weiyunchong.com%2FpayQRcode.html%3Fdevice_no%3DW52001715%26gun_num%3D8',
+        'alipays://platformapi/startapp?appId=2019012363098597&page=pagesEbike%2Fcommodity%2Fcommodity%3Fdevice_no%3DW52001715%26gun_num%3D8%26from%3DebikePile',
       );
       expect(notifier.state.hasPendingTask, isFalse);
 

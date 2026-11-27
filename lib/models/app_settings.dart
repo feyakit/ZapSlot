@@ -38,9 +38,9 @@ class AppSettings {
             : (defaultPortCount > 12 ? 12 : defaultPortCount),
         portIndexBase = portIndexBase == 1 ? 1 : 0;
 
-  /// 默认在线直达：保留原二维码全部参数，并附上选中的插座号（gun_num）直达支付页。
+  /// 默认在线直达：直达莱充小程序 commodity 选套餐付款页，0–9 插座号一一对应传入 gun_num。
   static const String defaultGlobalTemplate =
-      'alipays://platformapi/startapp?appId=20000067&url={RAW_URL_PORT0_ENCODED}';
+      'alipays://platformapi/startapp?appId=2019012363098597&page=pagesEbike%2Fcommodity%2Fcommodity%3Fdevice_no%3D{SN}%26gun_num%3D{PORT_0}%26from%3DebikePile';
   static const String defaultFallbackRawUrlTemplate =
       'http://weixin.weiyunchong.com/payQRcode.html?device_no={SN}';
   static const String defaultSerialRegex = r'W\d{8}';
@@ -48,37 +48,31 @@ class AppSettings {
 
   static const List<UrlRulePreset> presets = [
     UrlRulePreset(
-      name: '微云充 · 在线选号直达支付（默认）',
-      description: '保留原二维码全部参数（含签名/门店参数）并附加 gun_num，选几号口就直达几号口的支付页',
+      name: '莱充小程序 · 按插口直达选套餐付款页（默认）',
+      description: '直达莱充 commodity 付款页，0–9 插座号一一对应传入 gun_num，跳过扫码与选插座页',
+      template:
+          'alipays://platformapi/startapp?appId=2019012363098597&page=pagesEbike%2Fcommodity%2Fcommodity%3Fdevice_no%3D{SN}%26gun_num%3D{PORT_0}%26from%3DebikePile',
+      recommendedMode: UrlRuleMode.globalTemplate,
+    ),
+    UrlRulePreset(
+      name: '莱充小程序 · 直达选插座页（查看空闲口）',
+      description: '直达莱充 ebikePile 选插座页（appId=2019012363098597），先看各口实时空闲状态再选口',
+      template:
+          'alipays://platformapi/startapp?appId=2019012363098597&page=pagesEbike%2FebikePile%2FebikePile%3Fdevice_no%3D{SN}',
+      recommendedMode: UrlRuleMode.globalTemplate,
+    ),
+    UrlRulePreset(
+      name: '支付宝原生扫码路由直达（通用全部品牌）',
+      description: '完整保留原二维码所有参数并走支付宝原生扫码路由（自动进品牌小程序），适合非莱充品牌',
+      template:
+          'alipays://platformapi/startapp?saId=10000007&qrcode={RAW_URL_ENCODED}',
+      recommendedMode: UrlRuleMode.globalTemplate,
+    ),
+    UrlRulePreset(
+      name: '微云充 H5 · 在线选号直达支付（旧版兼容）',
+      description: '强制用支付宝 H5 浏览器打开微云充旧版网页并附加 gun_num',
       template:
           'alipays://platformapi/startapp?appId=20000067&url={RAW_URL_PORT0_ENCODED}',
-      recommendedMode: UrlRuleMode.globalTemplate,
-    ),
-    UrlRulePreset(
-      name: '通用原始码 · 支付宝直达（进选口页）',
-      description: '完整保留原二维码所有参数并交由支付宝内置浏览器打开，进入选口页自行选择空闲插座',
-      template:
-          'alipays://platformapi/startapp?appId=20000067&url={RAW_URL_ENCODED}',
-      recommendedMode: UrlRuleMode.globalTemplate,
-    ),
-    UrlRulePreset(
-      name: '微云充 · 按桩号拼接支付宝直达',
-      description: '仅按 {SN} 拼接微云充地址（适合无签名参数的纯编号桩或 OCR / 尾号直达）',
-      template:
-          'alipays://platformapi/startapp?appId=20000067&url=http%3A%2F%2Fweixin.weiyunchong.com%2FpayQRcode.html%3Fdevice_no%3D{SN}',
-      recommendedMode: UrlRuleMode.globalTemplate,
-    ),
-    UrlRulePreset(
-      name: '微云充 · 原始 H5 链接',
-      description: '直接拼接微云充原始网页地址并交由系统默认打开',
-      template: 'http://weixin.weiyunchong.com/payQRcode.html?device_no={SN}',
-      recommendedMode: UrlRuleMode.globalTemplate,
-    ),
-    UrlRulePreset(
-      name: '支付宝小程序直达模板',
-      description: '适合已知小程序 appId 与页面路径的充电品牌，支持动态拼接 {SN} 与 {PORT}',
-      template:
-          'alipays://platformapi/startapp?appId=2021000000000000&page=pages/charge/index&query=sn%3D{SN}%26port%3D{PORT}',
       recommendedMode: UrlRuleMode.globalTemplate,
     ),
     UrlRulePreset(
