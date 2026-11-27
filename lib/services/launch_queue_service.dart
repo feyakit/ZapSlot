@@ -236,12 +236,21 @@ class LaunchQueueNotifier extends StateNotifier<LaunchQueueState> {
     if (!mounted) return false;
     state = state.copyWith(isChecking: true);
     try {
-      var reachable = _checkInternetOverride != null
-          ? await _checkInternetOverride()
-          : await (_internetChecker?.hasInternetAccess ?? Future.value(false));
-      if (!reachable && _checkInternetOverride == null) {
-        // 部分 ROM / 第三方检测库会误报离线，用自带 HTTPS 探针复核一次再下结论。
-        reachable = await _quickProbe();
+      var reachable = false;
+      if (_checkInternetOverride != null) {
+        reachable = await _checkInternetOverride();
+      } else {
+        // 第三方检测库在部分 ROM 上会抛异常（SocketException/TLS）而不是返回 false，
+        // 单独 try 住，保证总能落到自带的 HTTPS 探针，避免"明明在线却显示离线"。
+        try {
+          reachable =
+              await (_internetChecker?.hasInternetAccess ?? Future.value(false));
+        } catch (_) {
+          reachable = false;
+        }
+        if (!reachable) {
+          reachable = await _quickProbe();
+        }
       }
       if (!mounted) return reachable;
       _handleNetworkTransition(reachable, triggerRecovery: triggerRecovery);

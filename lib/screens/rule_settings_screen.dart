@@ -6,6 +6,7 @@ import '../models/app_settings.dart';
 import '../providers/app_providers.dart';
 import '../services/url_rule_engine.dart';
 import '../theme/app_theme.dart';
+import '../widgets/network_diagnostics_sheet.dart';
 
 /// URL 重写规则与全局参数设置页
 class RuleSettingsScreen extends ConsumerStatefulWidget {
@@ -461,6 +462,29 @@ class _RuleSettingsScreenState extends ConsumerState<RuleSettingsScreen> {
                   onChanged: (value) {
                     setState(() => _portIndexBaseZero = value);
                   },
+                ),
+                const SizedBox(height: 10),
+                OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size.fromHeight(48),
+                    side: const BorderSide(color: AppColors.border),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  onPressed: () => showNetworkDiagnosticsSheet(context),
+                  icon: const Icon(
+                    Icons.wifi_tethering_rounded,
+                    size: 18,
+                    color: AppColors.textSecondary,
+                  ),
+                  label: const Text(
+                    '网络诊断（排查"有信号却提示离线"）',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
                 ),
               ],
             ),
