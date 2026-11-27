@@ -285,7 +285,7 @@ class _QuickSerialModalState extends ConsumerState<QuickSerialModal> {
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Text(
-                    '已匹配保存桩：${matched.alias}（上次 ${matched.lastUsedPort}号口）',
+                    '已匹配保存桩：${matched.alias}（上次 ${settings.socketNumber(matched.lastUsedPort)}号口）',
                     style: const TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
@@ -336,7 +336,7 @@ class _QuickSerialModalState extends ConsumerState<QuickSerialModal> {
                           ),
                         ),
                         child: Text(
-                          '$port',
+                          '${settings.socketNumber(port)}',
                           style: TextStyle(
                             fontSize: 15,
                             fontWeight: FontWeight.w800,
@@ -375,8 +375,8 @@ class _QuickSerialModalState extends ConsumerState<QuickSerialModal> {
                   ),
                   label: Text(
                     queueState.isOnline
-                        ? '立即直达 · $_selectedPort号口'
-                        : '加入离线排队 · $_selectedPort号口',
+                        ? '立即直达 · ${settings.socketNumber(_selectedPort)}号口'
+                        : '加入离线排队 · ${settings.socketNumber(_selectedPort)}号口',
                     style: const TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w800,

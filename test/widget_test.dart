@@ -92,8 +92,8 @@ void main() {
     expect(find.text('W52001414'), findsOneWidget);
     expect(find.text('选择插座编号（直达传参）'), findsNWidgets(2));
 
-    // 点击第一张卡片的“离线排队 · 1号口”
-    await tester.tap(find.text('离线排队 · 1号口'));
+    // 点击第一张卡片的“离线排队 · 0号口”
+    await tester.tap(find.text('离线排队 · 0号口'));
     await tester.pumpAndSettle();
 
     expect(find.text('离线排队中 · 出电梯有网自动唤起'), findsOneWidget);
@@ -110,8 +110,8 @@ void main() {
     await tester.pumpWidget(buildTestApp(isOnline: true));
     await tester.pumpAndSettle();
 
+    expect(find.text('选号直达支付 · 0号口'), findsOneWidget);
     expect(find.text('选号直达支付 · 1号口'), findsOneWidget);
-    expect(find.text('选号直达支付 · 2号口'), findsOneWidget);
     expect(find.text('外网已畅通 · 点击即可跳过广告直达'), findsOneWidget);
   });
 
@@ -131,7 +131,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.textContaining('已匹配保存桩：B2-B区 2号桩'), findsOneWidget);
-    expect(find.text('加入离线排队 · 2号口'), findsOneWidget);
+    expect(find.text('加入离线排队 · 1号口'), findsOneWidget);
   });
 
   testWidgets('RuleSettingsScreen opens and shows WeiYunChong presets',

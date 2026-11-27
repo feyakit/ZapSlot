@@ -103,6 +103,9 @@ class AppSettings {
   /// 插座号传参基准：0 = gun_num 从 0 开始（1号口传 0），1 = 与服务端 1 起始一致。
   final int portIndexBase;
 
+  /// 展示给用户的插座编号（与微云充页面一致：0 起始时端口 1 显示为 0）。
+  int socketNumber(int port) => (port - 1 + portIndexBase).clamp(0, 99);
+
   AppSettings copyWith({
     UrlRuleMode? ruleMode,
     String? globalUrlTemplate,

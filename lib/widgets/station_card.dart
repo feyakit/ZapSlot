@@ -14,6 +14,7 @@ class StationCard extends StatefulWidget {
     required this.isQueuedHere,
     this.queuedPort,
     this.usesPort = false,
+    this.portIndexBase = 0,
     required this.onTrigger,
     required this.onCopyLink,
     required this.onEdit,
@@ -26,6 +27,7 @@ class StationCard extends StatefulWidget {
   final bool isQueuedHere;
   final int? queuedPort;
   final bool usesPort;
+  final int portIndexBase;
   final ValueChanged<int> onTrigger;
   final ValueChanged<int> onCopyLink;
   final VoidCallback onEdit;
@@ -37,6 +39,10 @@ class StationCard extends StatefulWidget {
 
 class _StationCardState extends State<StationCard> {
   late int _selectedPort;
+
+  /// 卡片上展示的插座编号（0 起始即与微云充页面一致）
+  String _socket(int port) => (port - 1 + widget.portIndexBase).clamp(0, 99).toString();
+
 
   @override
   void initState() {
@@ -148,7 +154,7 @@ class _StationCardState extends State<StationCard> {
                         ),
                         const SizedBox(width: 10),
                         Text(
-                          '上次 ${widget.station.lastUsedPort}号口',
+                          '上次 ${_socket(widget.station.lastUsedPort)}号口',
                           style: const TextStyle(
                             fontSize: 13,
                             color: AppColors.textSecondary,
@@ -258,7 +264,7 @@ class _StationCardState extends State<StationCard> {
                       ),
                     ),
                     child: Text(
-                      '$port',
+                      _socket(port),
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w800,
@@ -304,12 +310,12 @@ class _StationCardState extends State<StationCard> {
               ),
               label: Text(
                 widget.isQueuedHere
-                    ? '排队中 (${widget.queuedPort ?? _selectedPort}号口) · 点此更新'
+                    ? '排队中 (${_socket(widget.queuedPort ?? _selectedPort)}号口) · 点此更新'
                     : (widget.isOnline
                         ? (widget.usesPort
-                            ? '选号直达支付 · $_selectedPort号口'
-                            : '打开充电页 · $_selectedPort号口')
-                        : '离线排队 · $_selectedPort号口'),
+                            ? '选号直达支付 · ${_socket(_selectedPort)}号口'
+                            : '打开充电页 · ${_socket(_selectedPort)}号口')
+                        : '离线排队 · ${_socket(_selectedPort)}号口'),
                 style: const TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w800,

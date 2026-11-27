@@ -227,7 +227,7 @@ class LaunchQueueNotifier extends StateNotifier<LaunchQueueState> {
       pendingStation: matched,
       pendingPort: record.port,
       queuedAt: record.queuedAt,
-      statusMessage: '已恢复上次离线排队：${matched.alias} (${record.port}号口)',
+      statusMessage: '已恢复上次离线排队：${matched.alias} (${_readSettings().socketNumber(record.port)}号口)',
     );
   }
 
@@ -328,7 +328,7 @@ class LaunchQueueNotifier extends StateNotifier<LaunchQueueState> {
             clearPendingPort: true,
             clearQueuedAt: true,
             lastAttemptedUrl: uri.toString(),
-            statusMessage: '网络已恢复，已自动唤起 ${station.serialNumber} ($port号口)',
+            statusMessage: '网络已恢复，已自动唤起 ${station.serialNumber} (${settings.socketNumber(port)}号口)',
           );
         } else {
           state = state.copyWith(
@@ -392,7 +392,7 @@ class LaunchQueueNotifier extends StateNotifier<LaunchQueueState> {
         clearPendingPort: true,
         clearQueuedAt: true,
         lastAttemptedUrl: uri.toString(),
-        statusMessage: '已直达 ${station.serialNumber} ($safePort号口)',
+        statusMessage: '已直达 ${station.serialNumber} (${settings.socketNumber(safePort)}号口)',
       );
       return QueueActionOutcome.launchedImmediately;
     }
@@ -426,7 +426,7 @@ class LaunchQueueNotifier extends StateNotifier<LaunchQueueState> {
       pendingPort: port,
       queuedAt: DateTime.now(),
       lastAttemptedUrl: uri.toString(),
-      statusMessage: '已加入地库离线排队：${station.serialNumber} · $port号口',
+      statusMessage: '已加入地库离线排队：${station.serialNumber} · ${_readSettings().socketNumber(port)}号口',
     );
     return QueueActionOutcome.queuedOffline;
   }
@@ -456,7 +456,7 @@ class LaunchQueueNotifier extends StateNotifier<LaunchQueueState> {
         clearPendingPort: true,
         clearQueuedAt: true,
         lastAttemptedUrl: uri.toString(),
-        statusMessage: '已唤起 ${station.serialNumber} ($port号口)',
+        statusMessage: '已唤起 ${station.serialNumber} (${_readSettings().socketNumber(port)}号口)',
       );
       return true;
     }

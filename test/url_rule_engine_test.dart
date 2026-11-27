@@ -283,6 +283,16 @@ void main() {
       expect(oneUrl, contains('gun_num=5'));
     });
 
+    test('socketNumber mirrors the charging platform numbering', () {
+      const zeroBased = AppSettings();
+      const oneBased = AppSettings(portIndexBase: 1);
+      // 内部 1 号端口 = 微云充页面的 0 号插座
+      expect(zeroBased.socketNumber(1), 0);
+      expect(zeroBased.socketNumber(10), 9);
+      expect(oneBased.socketNumber(1), 1);
+      expect(oneBased.socketNumber(10), 10);
+    });
+
     test('AppSettings ports index base and auto-add survive JSON round trip', () {
       const settings = AppSettings(
         autoAddScannedStation: false,

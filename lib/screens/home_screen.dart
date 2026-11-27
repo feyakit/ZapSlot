@@ -61,6 +61,7 @@ class HomeScreen extends ConsumerWidget {
                             station,
                             settings,
                           ),
+                          portIndexBase: settings.portIndexBase,
                           onTrigger: (port) async {
                             await ref
                                 .read(launchQueueProvider.notifier)
@@ -89,7 +90,7 @@ class HomeScreen extends ConsumerWidget {
                               ..showSnackBar(
                                 SnackBar(
                                   content: Text(
-                                    '已复制 ${station.serialNumber} ($port号口) 目标链接',
+                                    '已复制 ${station.serialNumber} (${settings.socketNumber(port)}号口) 目标链接',
                                   ),
                                 ),
                               );
@@ -505,7 +506,7 @@ class HomeScreen extends ConsumerWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            '当前生效目标链接（${draftStation.lastUsedPort}号口）',
+                            '当前生效目标链接（${settings.socketNumber(draftStation.lastUsedPort)}号口）',
                             style: const TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.w700,

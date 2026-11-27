@@ -386,7 +386,7 @@ class _OfflineScannerScreenState extends ConsumerState<OfflineScannerScreen> {
                                   ),
                                 ),
                                 child: Text(
-                                  '$port',
+                                  '${settings.socketNumber(port)}',
                                   style: TextStyle(
                                     fontWeight: FontWeight.w800,
                                     color: selected
