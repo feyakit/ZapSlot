@@ -4,7 +4,6 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../models/app_settings.dart';
 import '../providers/app_providers.dart';
-import '../services/ad_skip_service.dart';
 import '../services/url_rule_engine.dart';
 import '../theme/app_theme.dart';
 import '../widgets/network_diagnostics_sheet.dart';
@@ -17,8 +16,7 @@ class RuleSettingsScreen extends ConsumerStatefulWidget {
   ConsumerState<RuleSettingsScreen> createState() => _RuleSettingsScreenState();
 }
 
-class _RuleSettingsScreenState extends ConsumerState<RuleSettingsScreen>
-    with WidgetsBindingObserver {
+class _RuleSettingsScreenState extends ConsumerState<RuleSettingsScreen> {
   late final TextEditingController _templateController;
   late final TextEditingController _regexController;
   late final TextEditingController _prefixController;
@@ -27,12 +25,10 @@ class _RuleSettingsScreenState extends ConsumerState<RuleSettingsScreen>
   late bool _autoLaunchInForeground;
   late bool _autoAddScannedStation;
   late bool _portIndexBaseZero;
-  bool _adSkipEnabled = false;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this);
     final settings = ref.read(settingsProvider);
     _templateController =
         TextEditingController(text: settings.globalUrlTemplate);
@@ -43,27 +39,10 @@ class _RuleSettingsScreenState extends ConsumerState<RuleSettingsScreen>
     _autoLaunchInForeground = settings.autoLaunchInForeground;
     _autoAddScannedStation = settings.autoAddScannedStation;
     _portIndexBaseZero = settings.portIndexBase == 0;
-    _refreshAdSkipStatus();
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      _refreshAdSkipStatus();
-    }
-  }
-
-  Future<void> _refreshAdSkipStatus() async {
-    if (!AdSkipService.isSupported) return;
-    final enabled = await AdSkipService.isEnabled();
-    if (mounted) {
-      setState(() => _adSkipEnabled = enabled);
-    }
   }
 
   @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
     _templateController.dispose();
     _regexController.dispose();
     _prefixController.dispose();
@@ -90,9 +69,6 @@ class _RuleSettingsScreenState extends ConsumerState<RuleSettingsScreen>
         const SnackBar(content: Text('当前预览链接无效，无法测试跳转')),
       );
       return;
-    }
-    if (uri.scheme.toLowerCase() == 'alipays') {
-      await AdSkipService.armForAlipayLaunch();
     }
     final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
     if (!mounted) return;
@@ -487,119 +463,6 @@ class _RuleSettingsScreenState extends ConsumerState<RuleSettingsScreen>
                     setState(() => _portIndexBaseZero = value);
                   },
                 ),
-                if (AdSkipService.isSupported) ...[
-                  const SizedBox(height: 12),
-                  Container(
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: AppColors.surfaceElevated,
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(
-                        color: _adSkipEnabled
-                            ? AppColors.emerald.withValues(alpha: 0.7)
-                            : AppColors.border,
-                      ),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Icon(
-                              _adSkipEnabled
-                                  ? Icons.bolt_rounded
-                                  : Icons.fast_forward_rounded,
-                              size: 18,
-                              color: _adSkipEnabled
-                                  ? AppColors.emerald
-                                  : AppColors.amber,
-                            ),
-                            const SizedBox(width: 8),
-                            const Expanded(
-                              child: Text(
-                                '自动跳过支付宝开屏广告',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w800,
-                                  color: AppColors.textPrimary,
-                                ),
-                              ),
-                            ),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 3,
-                              ),
-                              decoration: BoxDecoration(
-                                color: (_adSkipEnabled
-                                        ? AppColors.emerald
-                                        : AppColors.amber)
-                                    .withValues(alpha: 0.16),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Text(
-                                _adSkipEnabled ? '已开启' : '未开启',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w800,
-                                  color: _adSkipEnabled
-                                      ? AppColors.emerald
-                                      : AppColors.amber,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 6),
-                        const Text(
-                          '仅在从「闪雀」直达支付宝后的 6 秒内自动点击开屏「跳过」按钮，超时即休眠，平时零耗电。',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: AppColors.textSecondary,
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        SizedBox(
-                          width: double.infinity,
-                          height: 42,
-                          child: OutlinedButton.icon(
-                            style: OutlinedButton.styleFrom(
-                              side: BorderSide(
-                                color: _adSkipEnabled
-                                    ? AppColors.border
-                                    : AppColors.emerald,
-                              ),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                            ),
-                            onPressed: () async {
-                              await AdSkipService.openAccessibilitySettings();
-                            },
-                            icon: Icon(
-                              Icons.accessibility_new_rounded,
-                              size: 18,
-                              color: _adSkipEnabled
-                                  ? AppColors.textSecondary
-                                  : AppColors.emerald,
-                            ),
-                            label: Text(
-                              _adSkipEnabled
-                                  ? '前往无障碍设置管理'
-                                  : '前往无障碍开启「闪雀 · 跳过支付宝开屏广告」',
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w700,
-                                color: _adSkipEnabled
-                                    ? AppColors.textSecondary
-                                    : AppColors.emerald,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
                 const SizedBox(height: 10),
                 OutlinedButton.icon(
                   style: OutlinedButton.styleFrom(
