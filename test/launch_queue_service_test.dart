@@ -483,6 +483,37 @@ void main() {
       notifier.dispose();
     });
 
+    test('StationLookupService detects stale server update_time snapshots', () {
+      final staleDt = StationLookupService.parseLatestServerUpdateTime(
+        [
+          {'gun_num': '0', 'update_time': '2024-06-30 05:02:20'},
+          {'gun_num': '4', 'update_time': '2024-06-30 23:21:18'},
+        ],
+        '2024-07-02 09:10:23',
+      );
+      expect(staleDt, DateTime(2024, 6, 30, 23, 21, 18));
+      expect(
+        StationLookupService.isServerTimestampStale(
+          staleDt,
+          now: DateTime(2026, 11, 27),
+        ),
+        isTrue,
+      );
+
+      final freshDt = StationLookupService.parseLatestServerUpdateTime(
+        [
+          {'gun_num': '0', 'update_time': '2026-11-27 09:00:00'},
+        ],
+      );
+      expect(
+        StationLookupService.isServerTimestampStale(
+          freshDt,
+          now: DateTime(2026, 11, 27, 10, 0),
+        ),
+        isFalse,
+      );
+    });
+
     test('ChargingHistoryNotifier records and clears local charging footprints',
         () async {
       final historyNotifier = ChargingHistoryNotifier(storage);

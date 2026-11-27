@@ -51,6 +51,8 @@ class StationLiveInfo {
     this.electricityFees,
     this.packages = const [],
     this.locationInfo,
+    this.serverUpdatedAt,
+    this.isStatusStale = false,
   });
 
   final String serialNumber;
@@ -69,6 +71,12 @@ class StationLiveInfo {
   final double? electricityFees;
   final List<String> packages;
   final StationLocationInfo? locationInfo;
+
+  /// 服务端返回的最近一次插口状态更新时间（用于识别旧接口已停更的历史快照）
+  final DateTime? serverUpdatedAt;
+
+  /// 服务端插口状态是否已停更过期（例如停留在数月/数年前的快照，不再具备实时参考价值）
+  final bool isStatusStale;
 
   int get idleCount =>
       gunStatuses.values.where((s) => s == GunWorkStatus.idle).length;
@@ -90,6 +98,8 @@ class StationLiveInfo {
     double? electricityFees,
     List<String>? packages,
     StationLocationInfo? locationInfo,
+    DateTime? serverUpdatedAt,
+    bool? isStatusStale,
   }) {
     return StationLiveInfo(
       serialNumber: serialNumber,
@@ -104,6 +114,8 @@ class StationLiveInfo {
       electricityFees: electricityFees ?? this.electricityFees,
       packages: packages ?? this.packages,
       locationInfo: locationInfo ?? this.locationInfo,
+      serverUpdatedAt: serverUpdatedAt ?? this.serverUpdatedAt,
+      isStatusStale: isStatusStale ?? this.isStatusStale,
     );
   }
 }
@@ -207,6 +219,40 @@ class StationLookupService {
       );
     }
     return result;
+  }
+
+  /// 从 `gun_info_list` 提取最近一次插口状态更新时间（若缺失则回退到设备 `update_time`）。
+  static DateTime? parseLatestServerUpdateTime(
+    dynamic rawGunList, [
+    dynamic deviceUpdateTime,
+  ]) {
+    DateTime? latest;
+    DateTime? parseTs(dynamic raw) {
+      final text = '${raw ?? ''}'.trim();
+      if (text.isEmpty) return null;
+      return DateTime.tryParse(text.replaceFirst(' ', 'T'));
+    }
+
+    if (rawGunList is List) {
+      for (final item in rawGunList) {
+        if (item is! Map) continue;
+        final dt = parseTs(item['update_time']);
+        if (dt != null && (latest == null || dt.isAfter(latest))) {
+          latest = dt;
+        }
+      }
+    }
+    return latest ?? parseTs(deviceUpdateTime);
+  }
+
+  /// 判断服务端状态时间戳是否已停更过期（超过 30 天未更新视为历史快照，不再标示实时空闲）。
+  static bool isServerTimestampStale(
+    DateTime? serverUpdatedAt, {
+    DateTime? now,
+  }) {
+    if (serverUpdatedAt == null) return false;
+    final refNow = now ?? DateTime.now();
+    return refNow.difference(serverUpdatedAt).inDays > 30;
   }
 
   static String formatPackageLabel(Map<String, dynamic> item) {
@@ -331,6 +377,12 @@ class StationLookupService {
         }
       }
 
+      final serverUpdatedAt = parseLatestServerUpdateTime(
+        data['gun_info_list'],
+        data['update_time'],
+      );
+      final isStatusStale = isServerTimestampStale(serverUpdatedAt);
+
       return StationLiveInfo(
         serialNumber: sn,
         gunStatuses: gunStatuses,
@@ -344,6 +396,8 @@ class StationLookupService {
         electricityFees: fees,
         packages: packages,
         locationInfo: locationInfo,
+        serverUpdatedAt: serverUpdatedAt,
+        isStatusStale: isStatusStale,
       );
     } catch (_) {
       return null;

@@ -35,6 +35,7 @@ class StationCard extends StatefulWidget {
     this.onPinToTop,
     this.onScheduleReminder,
     this.onOpenMiniProgram,
+    this.onOpenLiveSlots,
   });
 
   final ChargingStation station;
@@ -61,6 +62,7 @@ class StationCard extends StatefulWidget {
   final VoidCallback? onPinToTop;
   final ValueChanged<int>? onScheduleReminder;
   final VoidCallback? onOpenMiniProgram;
+  final VoidCallback? onOpenLiveSlots;
 
   @override
   State<StationCard> createState() => _StationCardState();
@@ -85,7 +87,10 @@ class _StationCardState extends State<StationCard>
     if (_isCompleted) return false;
     if (widget.watchingPortLabel != null) return true;
     final live = widget.liveInfo;
-    return live != null && !live.isDeviceOffline && live.busyCount > 0;
+    return live != null &&
+        !live.isDeviceOffline &&
+        !live.isStatusStale &&
+        live.busyCount > 0;
   }
 
   void _dismissCompleted() {
@@ -127,11 +132,16 @@ class _StationCardState extends State<StationCard>
         oldWidget.portCount != widget.portCount) {
       _selectedPort = widget.station.lastUsedPort.clamp(1, widget.portCount);
     }
+    final isStale = widget.liveInfo?.isStatusStale == true ||
+        oldWidget.liveInfo?.isStatusStale == true;
     final oldStatus = oldWidget.liveInfo?.gunStatuses[_selectedPort];
     final newStatus = widget.liveInfo?.gunStatuses[_selectedPort];
-    if (oldStatus == GunWorkStatus.busy && newStatus == GunWorkStatus.idle) {
+    if (!isStale &&
+        oldStatus == GunWorkStatus.busy &&
+        newStatus == GunWorkStatus.idle) {
       _localCompletedPortLabel = _socket(_selectedPort);
-    } else if (newStatus == GunWorkStatus.busy &&
+    } else if (!isStale &&
+        newStatus == GunWorkStatus.busy &&
         _localCompletedPortLabel == _socket(_selectedPort)) {
       _localCompletedPortLabel = null;
     }
@@ -149,7 +159,9 @@ class _StationCardState extends State<StationCard>
     HapticFeedback.mediumImpact();
 
     final p = AppTheme.paletteOf(context);
-    final detail = widget.liveInfo?.gunDetails[_selectedPort];
+    final live = widget.liveInfo;
+    final detail =
+        (live != null && !live.isStatusStale) ? live.gunDetails[_selectedPort] : null;
     if (widget.isOnline &&
         detail != null &&
         (detail.status == GunWorkStatus.busy ||
@@ -850,6 +862,46 @@ class _StationCardState extends State<StationCard>
   }
 
   Widget _buildIdleBadge(ZapPalette p, StationLiveInfo live) {
+    if (live.isStatusStale) {
+      final badge = Container(
+        margin: const EdgeInsets.only(left: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: p.primary.withValues(alpha: 0.14),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: p.primary.withValues(alpha: 0.34)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              '查实时口位',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+                color: p.primary,
+              ),
+            ),
+            const SizedBox(width: 2),
+            Icon(
+              Icons.open_in_new_rounded,
+              size: 11,
+              color: p.primary,
+            ),
+          ],
+        ),
+      );
+      if (widget.onOpenLiveSlots == null) return badge;
+      return InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: () {
+          HapticFeedback.selectionClick();
+          widget.onOpenLiveSlots!();
+        },
+        child: badge,
+      );
+    }
+
     final badgeColor = live.isDeviceOffline ? p.danger : p.idle;
     return Container(
       margin: const EdgeInsets.only(left: 6),
@@ -873,7 +925,9 @@ class _StationCardState extends State<StationCard>
   }
 
   String? _selectedSocketDetailText() {
-    final detail = widget.liveInfo?.gunDetails[_selectedPort];
+    final live = widget.liveInfo;
+    if (live == null || live.isStatusStale) return null;
+    final detail = live.gunDetails[_selectedPort];
     if (detail == null) return null;
     if (detail.status != GunWorkStatus.busy &&
         detail.remainingMinutes <= 0 &&
@@ -894,6 +948,14 @@ class _StationCardState extends State<StationCard>
     ];
     if (parts.isEmpty) return null;
     return '${_socket(_selectedPort)}号口 · ${parts.join(' · ')}';
+  }
+
+  String _formatSyncClock(DateTime dt) {
+    final diff = DateTime.now().difference(dt);
+    if (diff.inSeconds < 10) return '刚刚同步';
+    final hh = dt.hour.toString().padLeft(2, '0');
+    final mm = dt.minute.toString().padLeft(2, '0');
+    return '$hh:$mm同步';
   }
 
   Widget _buildBottomMetaBar(ZapPalette p, StationLiveInfo? info) {
@@ -940,7 +1002,10 @@ class _StationCardState extends State<StationCard>
         : null;
 
     final metaParts = <String>[
-      '上次 ${_socket(widget.station.lastUsedPort)}号口 (${_formatRelativeTime(widget.station.lastUsedDate)})',
+      if (info?.isStatusStale == true)
+        '实时口位以莱充为准'
+      else
+        '上次 ${_socket(widget.station.lastUsedPort)}号口 (${_formatRelativeTime(widget.station.lastUsedDate)})',
       if (info?.supportsFullSelfStop == true) '充满自停',
       if (feePart != null) feePart,
       if (pkgPart != null) pkgPart,
@@ -968,6 +1033,18 @@ class _StationCardState extends State<StationCard>
                 fontSize: 10,
                 color: p.busy,
                 fontWeight: FontWeight.w700,
+              ),
+            ),
+          )
+        else if (info != null && !info.isStatusStale)
+          Padding(
+            padding: const EdgeInsets.only(right: 4),
+            child: Text(
+              _formatSyncClock(info.updatedAt),
+              style: TextStyle(
+                fontSize: 10,
+                color: p.textSecondary,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ),
@@ -1001,7 +1078,9 @@ class _StationCardState extends State<StationCard>
   Widget _buildSocketGrid(ZapPalette p) {
     const columns = 5;
     final rowCount = (widget.portCount + columns - 1) ~/ columns;
-    final gunStatuses = widget.liveInfo?.gunStatuses;
+    final live = widget.liveInfo;
+    final gunStatuses =
+        (live != null && !live.isStatusStale) ? live.gunStatuses : null;
 
     return Column(
       children: List.generate(rowCount, (rowIndex) {

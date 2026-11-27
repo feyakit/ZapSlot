@@ -186,14 +186,41 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     color: p.primary,
                     backgroundColor: p.modalSurface,
                     onRefresh: () async {
+                      HapticFeedback.lightImpact();
                       await ref
                           .read(launchQueueProvider.notifier)
                           .refreshNetworkStatus();
+                      final onlineNow = ref.read(launchQueueProvider).isOnline;
+                      if (!onlineNow) {
+                        if (!context.mounted) return;
+                        ScaffoldMessenger.of(context)
+                          ..hideCurrentSnackBar()
+                          ..showSnackBar(
+                            const SnackBar(content: Text('当前处于离线状态，联网后自动同步')),
+                          );
+                        return;
+                      }
                       await ref
                           .read(stationLiveProvider.notifier)
                           .refreshAll();
+                      if (!context.mounted) return;
+                      final liveMap = ref.read(stationLiveProvider).byStationId;
+                      final allStale = liveMap.isNotEmpty &&
+                          liveMap.values.every((v) => v.isStatusStale);
+                      ScaffoldMessenger.of(context)
+                        ..hideCurrentSnackBar()
+                        ..showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              allStale
+                                  ? '已刷新基础信息 · 实时插口占用请点「查实时口位」在莱充查看'
+                                  : '已刷新充电桩实时状态',
+                            ),
+                          ),
+                        );
                     },
                     child: ListView.separated(
+                      physics: const AlwaysScrollableScrollPhysics(),
                       padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
                       itemCount: stations.length,
                       separatorBuilder: (_, __) => const SizedBox(height: 12),
@@ -268,6 +295,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                           ),
                           onOpenMiniProgram: () =>
                               _openLaiChongMiniProgram(context),
+                          onOpenLiveSlots: () => _openLaiChongLiveSlots(
+                            context,
+                            station.serialNumber,
+                          ),
                           onTrigger: (port) async {
                             await ref
                                 .read(launchQueueProvider.notifier)
@@ -799,6 +830,24 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ..hideCurrentSnackBar()
         ..showSnackBar(
           const SnackBar(content: Text('未能唤起支付宝莱充充电订单页，请确认已安装支付宝')),
+        );
+    }
+  }
+
+  Future<void> _openLaiChongLiveSlots(
+    BuildContext context,
+    String serialNumber,
+  ) async {
+    final sn = Uri.encodeComponent(serialNumber.trim().toUpperCase());
+    final uri = Uri.parse(
+      'alipays://platformapi/startapp?appId=2019012363098597&page=pagesEbike%2FebikePile%2FebikePile%3Fdevice_no%3D$sn',
+    );
+    final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!launched && context.mounted) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(content: Text('未能唤起支付宝莱充选插座页，请确认已安装支付宝')),
         );
     }
   }

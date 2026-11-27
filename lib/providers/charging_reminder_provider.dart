@@ -78,6 +78,7 @@ class ChargingReminderNotifier extends StateNotifier<ChargingReminderRecord?> {
     String stationId,
     StationLiveInfo info,
   ) async {
+    if (info.isStatusStale) return;
     final current = state;
     if (current == null ||
         current.watchStationId != stationId ||
