@@ -18,7 +18,8 @@ class ProbeResult {
   final int? elapsedMs;
   final String? error;
 
-  bool get ok => statusCode == 204 || statusCode == 200;
+  /// 只要拿到 HTTP 响应就说明链路通（204/200 是标准探测点，404 等也证明可达）。
+  bool get ok => statusCode != null;
 
   String get summary {
     if (ok) return 'HTTP $statusCode · ${elapsedMs ?? 0}ms';
